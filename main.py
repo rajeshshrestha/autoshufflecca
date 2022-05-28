@@ -71,10 +71,13 @@ class Solver():
             self.model.train()
             batch_idxs = list(BatchSampler(RandomSampler(
                 range(data_size)), batch_size=self.batch_size, drop_last=False))
+            # print(f"Batch Number: {self.batch_size}")
             for batch_idx in batch_idxs:
                 self.optimizer.zero_grad()
+                # print(f"Batch Indices Size: {len(batch_idx)}")
                 batch_x1 = x1[batch_idx, :]
                 batch_x2 = x2[batch_idx, :]
+                # print(f"Batch Data Number: {len(batch_x1)} {len(batch_x2)}")
                 o1, o2 = self.model(batch_x1, batch_x2)
                 loss = self.loss(o1, o2)
                 train_losses.append(loss.item())
@@ -175,7 +178,7 @@ if __name__ == '__main__':
 
     # the parameters for training the network
     learning_rate = 1e-3
-    epoch_num = 1
+    epoch_num = 100
     batch_size = 800
 
     # the regularization parameter of the network
@@ -195,8 +198,8 @@ if __name__ == '__main__':
     # Each view is stored in a gzip file separately. They will get downloaded the first time the code gets executed.
     # Datasets get stored under the datasets folder of user's Keras folder
     # normally under [Home Folder]/.keras/datasets/
-    data1 = load_data('./noisymnist_view1.gz')
-    data2 = load_data('./noisymnist_view2.gz')
+    data1 = load_data('./noisymnist_view1.gz', convert_to_image=True)
+    data2 = load_data('./noisymnist_view2.gz', convert_to_image=True)
     # Building, training, and producing the new features by DCCA
     model = DeepCCA(layer_sizes1, layer_sizes2, input_shape1,
                     input_shape2, outdim_size, use_all_singular_values, device=device).double()

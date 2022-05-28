@@ -1,20 +1,32 @@
 import gzip
+
+from numpy import imag
 from sklearn import svm
 from sklearn.metrics import accuracy_score
 import numpy as np
 import torch
 
 
-def load_data(data_file):
+def load_data(data_file, convert_to_image=False):
     """loads the data from the gzip pickled files, and converts to numpy arrays"""
     print('loading data ...')
     f = gzip.open(data_file, 'rb')
     train_set, valid_set, test_set = load_pickle(f)
     f.close()
 
+    '''Reshape into the image size for the '''
+    if convert_to_image:
+        _, pixel_num = train_set[0].shape
+        image_dim = int(pixel_num**0.5)
+        train_set = (train_set[0].reshape(-1, 1, image_dim, image_dim), train_set[1])
+        valid_set = (valid_set[0].reshape(-1, 1, image_dim, image_dim), valid_set[1])
+        test_set = (test_set[0].reshape(-1, 1, image_dim, image_dim), test_set[1])
+
     train_set_x, train_set_y = make_tensor(train_set)
     valid_set_x, valid_set_y = make_tensor(valid_set)
     test_set_x, test_set_y = make_tensor(test_set)
+
+    print(train_set_x.shape, valid_set_x.shape, test_set_x.shape)
 
     return [(train_set_x, train_set_y), (valid_set_x, valid_set_y), (test_set_x, test_set_y)]
 

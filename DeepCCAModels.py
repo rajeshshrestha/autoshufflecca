@@ -9,6 +9,14 @@ class MlpNet(nn.Module):
         super(MlpNet, self).__init__()
         layers = []
         layer_sizes = [input_size] + layer_sizes
+
+        layers.append(nn.Sequential(
+            nn.Conv2d(in_channels=1, out_channels=32, kernel_size=(3,3)),
+            nn.ReLU(),
+            nn.MaxPool2d(3),
+            nn.Flatten(),
+            nn.Linear(in_features= 2048, out_features=input_size)
+        ))
         for l_id in range(len(layer_sizes) - 1):
             if l_id == len(layer_sizes) - 2:
                 layers.append(nn.Sequential(
@@ -24,8 +32,10 @@ class MlpNet(nn.Module):
         self.layers = nn.ModuleList(layers)
 
     def forward(self, x):
+        # print(f"Input Shape: {x.shape}")
         for layer in self.layers:
             x = layer(x)
+            # print(x.shape)
         return x
 
 
