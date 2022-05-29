@@ -227,7 +227,7 @@ if __name__ == '__main__':
 
     # the parameters for training the network
     learning_rate = 1e-4
-    epoch_num = 200
+    epoch_num = 500
     batch_size = 256
 
     # the regularization parameter of the network
@@ -249,7 +249,6 @@ if __name__ == '__main__':
     # normally under [Home Folder]/.keras/datasets/
     data1 = load_data('./noisymnist_view1.gz', convert_to_image=True)
     data2 = load_data('./noisymnist_view2.gz', convert_to_image=True)
-    data2=data1
 
     # Building, training, and producing the new features by DCCA
     model = DeepCCA(input_shape1,
