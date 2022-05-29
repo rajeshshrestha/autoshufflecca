@@ -157,6 +157,8 @@ class Solver():
                                  make_grid(reconstructed_images.view(-1, 28, 28)), epoch+1, dataformats='HW')
                 writer.add_image('train_0/first_view_transformed_feature',
                                  make_grid(output_1.view(-1, 4, 4)), epoch+1, dataformats='HW')
+                writer.add_image('train_0/first_view_transformed_feature_with_M',
+                                 make_grid(torch.matmul(M, output_1.view(-1,16,1)).view(-1, 4, 4)), epoch+1, dataformats='HW')                 
                 writer.add_image('train_0/second_view_transformed_feature',
                                  make_grid(output_2.view(-1, 4, 4)), epoch+1, dataformats='HW')
                 writer.add_image('train_0/permutation_matrix',
@@ -288,7 +290,7 @@ if __name__ == '__main__':
         # T.RandomHorizontalFlip(p=0.5),
         # T.RandomVerticalFlip(p=0.5),
         # T.RandomRotation((-180,180)),
-        T.RandomAffine(degrees=0, translate=(0.1, 0.6), scale=(0.8, 1))
+        T.RandomAffine(degrees=0, translate=(0.1, 0.3), scale=(0.8, 1))
         ])
     for sub_data_index, sub_data in enumerate(data2):
         data2[sub_data_index] = (transform(sub_data[0]), sub_data[1])
