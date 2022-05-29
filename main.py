@@ -27,7 +27,30 @@ writer = SummaryWriter(log_dir=f"./runs/{datetime.now()}", flush_secs=10)
 
 def make_grid(tensor):
     img_num = tensor.shape[0]
-    return torch.cat((torch.cat([t for t in tensor[:img_num//2]], 0), torch.cat([t for t in tensor[img_num//2:]], 0)), 1)
+    return torch.cat((torch.cat([t for t in tensor[:img_num//2]], 0),
+     torch.cat([t for t in tensor[img_num//2:]], 0)), 1)
+
+def form_reconstructed_images(images, masks):
+    reconstructed_images = []
+    for image,mask in zip(images, masks):
+        image_height, image_width = image.shape
+        dimension_chunk_num = int(mask.shape[0]**0.5)
+        chunk_height, chunk_width = image_height//dimension_chunk_num, image_width//dimension_chunk_num
+        M = torch.argmax(mask, dim=1)
+
+        reconstructed_image = torch.zeros_like(image)
+        for reconstructed_idx, original_idx in enumerate(M):
+            reconstructed_i, reconstructed_j = reconstructed_idx//dimension_chunk_num, reconstructed_idx%dimension_chunk_num
+            original_i, original_j = original_idx//dimension_chunk_num, original_idx%dimension_chunk_num
+
+            reconstructed_image[reconstructed_i*chunk_height:(reconstructed_i+1)*chunk_height,
+            reconstructed_j*chunk_width:(reconstructed_j+1)*chunk_width
+            ] = \
+                image[original_i*chunk_height:(original_i+1)*chunk_height,
+            original_j*chunk_width:(original_j+1)*chunk_width
+            ]
+        reconstructed_images.append(reconstructed_image)
+    return torch.stack(reconstructed_images)
 
 
 class Solver():
@@ -124,10 +147,13 @@ class Solver():
                 input_1 = x1[:30, :]
                 input_2 = x2[:30, :]
                 output_1, output_2, M = self.model(input_1, input_2)
+                reconstructed_images = form_reconstructed_images(input_1.view(-1,28,28), M)
                 writer.add_image('train_0/first_view_original',
                                  make_grid(input_1.view(-1, 28, 28)), epoch+1, dataformats='HW')
                 writer.add_image('train_0/second_view_original',
                                  make_grid(input_2.view(-1, 28, 28)), epoch+1, dataformats='HW')
+                writer.add_image('train_0/second_view_reconstructed',
+                                 make_grid(reconstructed_images.view(-1, 28, 28)), epoch+1, dataformats='HW')
                 writer.add_image('train_0/first_view_transformed_feature',
                                  make_grid(output_1.view(-1, 4, 4)), epoch+1, dataformats='HW')
                 writer.add_image('train_0/second_view_transformed_feature',
@@ -259,6 +285,7 @@ if __name__ == '__main__':
 
     transform = T.Compose([
         T.RandomHorizontalFlip(p=0.5),
+        T.RandomVerticalFlip(p=0.5),
         T.RandomRotation((-180,180)),
         T.RandomAffine(degrees=(0, 15), translate=(0.1, 0.3), scale=(0.8, 1))
         ])
