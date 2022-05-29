@@ -9,6 +9,8 @@ import time
 import logging
 from datetime import datetime
 import torchvision
+from copy import deepcopy
+import torchvision.transforms as T
 try:
     import cPickle as thepickle
 except ImportError:
@@ -25,7 +27,7 @@ writer = SummaryWriter(log_dir=f"./runs/{datetime.now()}", flush_secs=10)
 
 def make_grid(tensor):
     img_num = tensor.shape[0]
-    return torch.cat((torch.cat([t for t in tensor[:img_num//2]],1),torch.cat([t for t in tensor[img_num//2:]],1)),0)
+    return torch.cat((torch.cat([t for t in tensor[:img_num//2]], 0), torch.cat([t for t in tensor[img_num//2:]], 0)), 1)
 
 
 class Solver():
@@ -98,13 +100,13 @@ class Solver():
 
                 # Log to tensorboard
                 writer.add_scalars('TrainBatchStats',
-                {
-                    'batch_total_loss': loss.item(),
-                    'batch_cor': corr.item(),
-                    'batch_mreg_loss': Mreg.item()
-                },
-                epoch*len(batch_idxs)+idx+1
-                )
+                                   {
+                                       'batch_total_loss': loss.item(),
+                                       'batch_cor': corr.item(),
+                                       'batch_mreg_loss': Mreg.item()
+                                   },
+                                   epoch*len(batch_idxs)+idx+1
+                                   )
 
                 # torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1)
                 self.optimizer.step()
@@ -113,21 +115,25 @@ class Solver():
             Mreg = np.mean(Mregs)
 
             writer.add_scalars('TrainEpochStats', {
-                    'epoch_total_loss': train_loss,
-                    'epoch_cor': corr,
-                    'epoch_mreg_loss': Mreg
-                }, epoch+1)
-            
-            with torch.no_grad():
-                input_1 = x1[:10,:]
-                input_2 = x2[:10, :]
-                output_1, output_2, M = self.model(input_1, input_2)
-                writer.add_image('train_0/first_view_original', make_grid(input_1.view(-1,28,28)), epoch+1, dataformats='HW')
-                writer.add_image('train_0/second_view_original', make_grid(input_2.view(-1,28,28)), epoch+1, dataformats='HW')
-                writer.add_image('train_0/first_view_transformed_feature', make_grid(output_1.view(-1, 4,4)), epoch+1, dataformats='HW')
-                writer.add_image('train_0/second_view_transformed_feature', make_grid(output_2.view(-1, 4,4)), epoch+1, dataformats='HW')
-                writer.add_image('train_0/permutation_matrix', make_grid(M.view(-1,16,16)), epoch+1, dataformats='HW')
+                'epoch_total_loss': train_loss,
+                'epoch_cor': corr,
+                'epoch_mreg_loss': Mreg
+            }, epoch+1)
 
+            with torch.no_grad():
+                input_1 = x1[:30, :]
+                input_2 = x2[:30, :]
+                output_1, output_2, M = self.model(input_1, input_2)
+                writer.add_image('train_0/first_view_original',
+                                 make_grid(input_1.view(-1, 28, 28)), epoch+1, dataformats='HW')
+                writer.add_image('train_0/second_view_original',
+                                 make_grid(input_2.view(-1, 28, 28)), epoch+1, dataformats='HW')
+                writer.add_image('train_0/first_view_transformed_feature',
+                                 make_grid(output_1.view(-1, 4, 4)), epoch+1, dataformats='HW')
+                writer.add_image('train_0/second_view_transformed_feature',
+                                 make_grid(output_2.view(-1, 4, 4)), epoch+1, dataformats='HW')
+                writer.add_image('train_0/permutation_matrix',
+                                 make_grid(M.view(-1, 16, 16)), epoch+1, dataformats='HW')
 
             info_string = "Epoch {:d}/{:d} - time: {:.2f} - training_loss: {:.4f} Corr: {:.4f} Mreg: {:.4f}"
             if vx1 is not None and vx2 is not None:
@@ -248,7 +254,16 @@ if __name__ == '__main__':
     # Datasets get stored under the datasets folder of user's Keras folder
     # normally under [Home Folder]/.keras/datasets/
     data1 = load_data('./noisymnist_view1.gz', convert_to_image=True)
-    data2 = load_data('./noisymnist_view2.gz', convert_to_image=True)
+    # data2 = load_data('./noisymnist_view2.gz', convert_to_image=True)
+    data2 = deepcopy(data1)
+
+    transform = T.Compose([
+        T.RandomHorizontalFlip(p=0.5),
+        T.RandomRotation((-180,180)),
+        T.RandomAffine(degrees=(0, 15), translate=(0.1, 0.3), scale=(0.8, 1))
+        ])
+    for sub_data_index, sub_data in enumerate(data2):
+        data2[sub_data_index] = (transform(sub_data[0]), sub_data[1])
 
     # Building, training, and producing the new features by DCCA
     model = DeepCCA(input_shape1,
