@@ -56,9 +56,10 @@ class PermNet(nn.Module):
         o1 = self.layers[0](x1)
         o2 = self.layers[0](x2)
         M = self.layers[1](torch.cat((o1,o2),-1))
-        M = M.reshape(-1,8,8)
-        M = F.normalize(M,p=1, dim=1)
-        M = F.normalize(M, p=1, dim=2)
+        M = M.view(-1,8,8)
+        for k in range(1):
+            M = F.normalize(M+1e-12*torch.rand_like(M),p=1, dim=1)
+            M = F.normalize(M+1e-12*torch.rand_like(M), p=1, dim=2)
 
         return M
 
@@ -91,7 +92,7 @@ class DeepCCA(nn.Module):
 
         # flatten
         output1 = output1.view(output1.shape[0],-1)
-        
+
         # print(permutation_out)
 
         # print(f"M: {permutation_out}")

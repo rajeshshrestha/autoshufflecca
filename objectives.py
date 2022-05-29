@@ -18,7 +18,7 @@ class cca_loss():
         r1 = 1e-3
         r2 = 1e-3
         eps = 1e-9
-        lambda_M = 0
+        lambda_M = 1e-1
 
         H1, H2 = H1.t(), H2.t()
 
@@ -79,9 +79,7 @@ class cca_loss():
             U = U.topk(self.k_eigen_check_num)[0]
         corr = torch.sum(torch.sqrt(U))
 
-        M_reg = torch.sum(torch.sum(torch.sum(torch.abs(M), dim=2) - (torch.sum(M**2, dim=2))**0.5,dim=1)) +\
-            torch.sum(torch.sum(torch.sum(torch.abs(M), dim=1) - (torch.sum(M**2, dim=1))**0.5,dim=1))
-
+        M_reg = 1/m*( torch.sum(torch.sum(torch.sum(torch.abs(M), dim=2) - (torch.sum(M**2, dim=2))**0.5,dim=1)) +\
+            torch.sum(torch.sum(torch.sum(torch.abs(M), dim=1) - (torch.sum(M**2, dim=1))**0.5,dim=1)))
         
-        
-        return -corr + lambda_M/m * M_reg
+        return -corr + lambda_M * M_reg, corr, M_reg

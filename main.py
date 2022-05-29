@@ -66,6 +66,8 @@ class Solver():
             tx2.to(self.device)
 
         train_losses = []
+        Mregs = []
+        corrs = []
         for epoch in range(self.epoch_num):
             epoch_start_time = time.time()
             self.model.train()
@@ -74,41 +76,41 @@ class Solver():
             # print(f"Batch Number: {self.batch_size}")
             for batch_idx in batch_idxs:
                 self.optimizer.zero_grad()
-                # print(f"Batch Indices Size: {len(batch_idx)}")
                 batch_x1 = x1[batch_idx, :]
                 batch_x2 = x2[batch_idx, :]
-                # print(f"Batch Data Number: {len(batch_x1)} {len(batch_x2)}")
                 o1, o2, M = self.model(batch_x1, batch_x2)
-                # print(o1)
-                # print(o2)
-                loss = self.loss(o1, o2, M)
-                print(loss)
+
+                loss, corr, Mreg = self.loss(o1, o2, M)
                 train_losses.append(loss.item())
+                corrs.append(corr.item())
+                Mregs.append(Mreg.item())
                 loss.backward()
 
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1)
+                # torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1)
                 self.optimizer.step()
             train_loss = np.mean(train_losses)
+            corr = np.mean(corrs)
+            Mreg = np.mean(Mregs)
 
-            info_string = "Epoch {:d}/{:d} - time: {:.2f} - training_loss: {:.4f}"
+            info_string = "Epoch {:d}/{:d} - time: {:.2f} - training_loss: {:.4f} Corr: {:.4f} Mreg: {:.4f}"
             if vx1 is not None and vx2 is not None:
                 with torch.no_grad():
                     self.model.eval()
                     val_loss, outputs = self.test(vx1, vx2)
                     info_string += " - val_loss: {:.4f}".format(val_loss)
                     if val_loss < best_val_loss:
-                        self.logger.info(
-                            "Epoch {:d}: val_loss improved from {:.4f} to {:.4f}, saving model to {}".format(epoch + 1, best_val_loss, val_loss, checkpoint))
+                        # self.logger.info(
+                        #     "Epoch {:d}: val_loss improved from {:.4f} to {:.4f}, saving model to {}".format(epoch + 1, best_val_loss, val_loss, checkpoint))
                         best_val_loss = val_loss
                         torch.save(self.model.state_dict(), checkpoint)
-                    else:
-                        self.logger.info("Epoch {:d}: val_loss did not improve from {:.4f}".format(
-                            epoch + 1, best_val_loss))
+                    # else:
+                        # self.logger.info("Epoch {:d}: val_loss did not improve from {:.4f}".format(
+                        #     epoch + 1, best_val_loss))
             else:
                 torch.save(self.model.state_dict(), checkpoint)
             epoch_time = time.time() - epoch_start_time
             self.logger.info(info_string.format(
-                epoch + 1, self.epoch_num, epoch_time, train_loss))
+                epoch + 1, self.epoch_num, epoch_time, train_loss, corr, Mreg))
 
         # train_linear_cca
         if self.linear_cca is not None:
@@ -156,7 +158,7 @@ class Solver():
                 outputs1.append(o1)
                 outputs2.append(o2)
                 Mvalues.append(M)
-                loss = self.loss(o1, o2, M)
+                loss, corr, M_reg = self.loss(o1, o2, M)
                 losses.append(loss.item())
         outputs = [torch.cat(outputs1, dim=0).cpu().numpy(),
                    torch.cat(outputs2, dim=0).cpu().numpy(),
@@ -185,7 +187,7 @@ if __name__ == '__main__':
     k_eigen_check_num = 4
 
     # the parameters for training the network
-    learning_rate = 1e-6
+    learning_rate = 1e-3
     epoch_num = 30
     batch_size = 1024
 
