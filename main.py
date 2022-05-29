@@ -27,8 +27,9 @@ writer = SummaryWriter(log_dir=f"./runs/{datetime.now()}", flush_secs=10)
 
 def make_grid(tensor):
     img_num = tensor.shape[0]
-    return torch.cat((torch.cat([t for t in tensor[:img_num//2]], 0),
-     torch.cat([t for t in tensor[img_num//2:]], 0)), 1)
+    # return torch.cat((torch.cat([t for t in tensor[:img_num//2]], 0),
+    #  torch.cat([t for t in tensor[img_num//2:]], 0)), 1)
+    return torch.cat([t for t in tensor[:img_num]], 0)
 
 def form_reconstructed_images(images, masks):
     reconstructed_images = []
@@ -284,10 +285,10 @@ if __name__ == '__main__':
     data2 = deepcopy(data1)
 
     transform = T.Compose([
-        T.RandomHorizontalFlip(p=0.5),
-        T.RandomVerticalFlip(p=0.5),
-        T.RandomRotation((-180,180)),
-        T.RandomAffine(degrees=(0, 15), translate=(0.1, 0.3), scale=(0.8, 1))
+        # T.RandomHorizontalFlip(p=0.5),
+        # T.RandomVerticalFlip(p=0.5),
+        # T.RandomRotation((-180,180)),
+        T.RandomAffine(degrees=0, translate=(0.1, 0.6), scale=(0.8, 1))
         ])
     for sub_data_index, sub_data in enumerate(data2):
         data2[sub_data_index] = (transform(sub_data[0]), sub_data[1])
