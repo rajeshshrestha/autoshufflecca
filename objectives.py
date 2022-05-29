@@ -18,7 +18,7 @@ class cca_loss():
         r1 = 1e-3
         r2 = 1e-3
         eps = 1e-9
-        lambda_M = 10
+        lambda_M = 1e-3
 
         H1, H2 = H1.t(), H2.t()
 

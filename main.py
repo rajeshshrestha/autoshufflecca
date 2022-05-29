@@ -8,6 +8,7 @@ from utils import load_data, svm_classify
 import time
 import logging
 from datetime import datetime
+import torchvision
 try:
     import cPickle as thepickle
 except ImportError:
@@ -22,6 +23,11 @@ torch.set_default_tensor_type(torch.DoubleTensor)
 writer = SummaryWriter(log_dir=f"./runs/{datetime.now()}", flush_secs=10)
 
 
+def make_grid(tensor):
+    img_num = tensor.shape[0]
+    return torch.cat((torch.cat([t for t in tensor[:img_num//2]],1),torch.cat([t for t in tensor[img_num//2:]],1)),0)
+
+
 class Solver():
     def __init__(self, model, linear_cca, linear_outdim_size, epoch_num, batch_size, learning_rate, reg_par, device=torch.device('cpu')):
         self.model = nn.DataParallel(model)
@@ -29,7 +35,7 @@ class Solver():
         self.epoch_num = epoch_num
         self.batch_size = batch_size
         self.loss = model.loss
-        self.optimizer = torch.optim.RMSprop(
+        self.optimizer = torch.optim.Adam(
             self.model.parameters(), lr=learning_rate, weight_decay=reg_par)
         self.device = device
 
@@ -113,14 +119,14 @@ class Solver():
                 }, epoch+1)
             
             with torch.no_grad():
-                input_1 = x1[[0],:]
-                input_2 = x2[[0], :]
+                input_1 = x1[:10,:]
+                input_2 = x2[:10, :]
                 output_1, output_2, M = self.model(input_1, input_2)
-                writer.add_image('train_0/first_view_original', input_1[0].view(28,28), epoch+1, dataformats='HW')
-                writer.add_image('train_0/second_view_original', input_2[0].view(28,28), epoch+1, dataformats='HW')
-                writer.add_image('train_0/first_view_transformed_feature', output_1[0].view(8,8) ,epoch+1, dataformats='HW')
-                writer.add_image('train_0/second_view_transformed_feature', output_2[0].view(8,8) ,epoch+1, dataformats='HW')
-                writer.add_image('train_0/permutation_matrix', M[0].view(64,64) , epoch+1, dataformats='HW')
+                writer.add_image('train_0/first_view_original', make_grid(input_1.view(-1,28,28)), epoch+1, dataformats='HW')
+                writer.add_image('train_0/second_view_original', make_grid(input_2.view(-1,28,28)), epoch+1, dataformats='HW')
+                writer.add_image('train_0/first_view_transformed_feature', make_grid(output_1.view(-1, 4,4)), epoch+1, dataformats='HW')
+                writer.add_image('train_0/second_view_transformed_feature', make_grid(output_2.view(-1, 4,4)), epoch+1, dataformats='HW')
+                writer.add_image('train_0/permutation_matrix', make_grid(M.view(-1,16,16)), epoch+1, dataformats='HW')
 
 
             info_string = "Epoch {:d}/{:d} - time: {:.2f} - training_loss: {:.4f} Corr: {:.4f} Mreg: {:.4f}"
@@ -217,12 +223,12 @@ if __name__ == '__main__':
     linear_outdim_size = 10
 
     # the number of eigen values to check in the correlation
-    k_eigen_check_num = 4
+    k_eigen_check_num = 16
 
     # the parameters for training the network
-    learning_rate = 1e-1
+    learning_rate = 1e-4
     epoch_num = 200
-    batch_size = 2048
+    batch_size = 256
 
     # the regularization parameter of the network
     # seems necessary to avoid the gradient exploding especially when non-saturating activations are used
@@ -243,6 +249,7 @@ if __name__ == '__main__':
     # normally under [Home Folder]/.keras/datasets/
     data1 = load_data('./noisymnist_view1.gz', convert_to_image=True)
     data2 = load_data('./noisymnist_view2.gz', convert_to_image=True)
+    data2=data1
 
     # Building, training, and producing the new features by DCCA
     model = DeepCCA(input_shape1,
