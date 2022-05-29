@@ -7,6 +7,7 @@ from DeepCCAModels import DeepCCA
 from utils import load_data, svm_classify
 import time
 import logging
+from datetime import datetime
 try:
     import cPickle as thepickle
 except ImportError:
@@ -15,7 +16,10 @@ except ImportError:
 import gzip
 import numpy as np
 import torch.nn as nn
+from torch.utils.tensorboard import SummaryWriter
 torch.set_default_tensor_type(torch.DoubleTensor)
+
+writer = SummaryWriter(log_dir=f"./runs/{datetime.now()}", flush_secs=10)
 
 
 class Solver():
@@ -74,7 +78,7 @@ class Solver():
             batch_idxs = list(BatchSampler(RandomSampler(
                 range(data_size)), batch_size=self.batch_size, drop_last=False))
             # print(f"Batch Number: {self.batch_size}")
-            for batch_idx in batch_idxs:
+            for idx, batch_idx in enumerate(batch_idxs):
                 self.optimizer.zero_grad()
                 batch_x1 = x1[batch_idx, :]
                 batch_x2 = x2[batch_idx, :]
@@ -86,17 +90,46 @@ class Solver():
                 Mregs.append(Mreg.item())
                 loss.backward()
 
+                # Log to tensorboard
+                writer.add_scalars('TrainBatchStats',
+                {
+                    'batch_total_loss': loss.item(),
+                    'batch_cor': corr.item(),
+                    'batch_mreg_loss': Mreg.item()
+                },
+                epoch*len(batch_idxs)+idx+1
+                )
+
                 # torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1)
                 self.optimizer.step()
             train_loss = np.mean(train_losses)
             corr = np.mean(corrs)
             Mreg = np.mean(Mregs)
 
+            writer.add_scalars('TrainEpochStats', {
+                    'epoch_total_loss': train_loss,
+                    'epoch_cor': corr,
+                    'epoch_mreg_loss': Mreg
+                }, epoch+1)
+            
+            with torch.no_grad():
+                input_1 = x1[[0],:]
+                input_2 = x2[[0], :]
+                output_1, output_2, M = self.model(input_1, input_2)
+                writer.add_image('train_0/first_view_original', input_1[0].view(28,28), epoch+1, dataformats='HW')
+                writer.add_image('train_0/second_view_original', input_2[0].view(28,28), epoch+1, dataformats='HW')
+                writer.add_image('train_0/first_view_transformed_feature', output_1[0].view(8,8) ,epoch+1, dataformats='HW')
+                writer.add_image('train_0/second_view_transformed_feature', output_2[0].view(8,8) ,epoch+1, dataformats='HW')
+                writer.add_image('train_0/permutation_matrix', M[0].view(8,8) , epoch+1, dataformats='HW')
+
+
             info_string = "Epoch {:d}/{:d} - time: {:.2f} - training_loss: {:.4f} Corr: {:.4f} Mreg: {:.4f}"
             if vx1 is not None and vx2 is not None:
                 with torch.no_grad():
                     self.model.eval()
                     val_loss, outputs = self.test(vx1, vx2)
+                    writer.add_scalar("Val/EpochTotalLoss", val_loss, epoch+1)
+
                     info_string += " - val_loss: {:.4f}".format(val_loss)
                     if val_loss < best_val_loss:
                         # self.logger.info(
@@ -187,9 +220,9 @@ if __name__ == '__main__':
     k_eigen_check_num = 4
 
     # the parameters for training the network
-    learning_rate = 1e-3
-    epoch_num = 30
-    batch_size = 1024
+    learning_rate = 1e-1
+    epoch_num = 200
+    batch_size = 2048
 
     # the regularization parameter of the network
     # seems necessary to avoid the gradient exploding especially when non-saturating activations are used
