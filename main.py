@@ -19,7 +19,7 @@ torch.set_default_tensor_type(torch.DoubleTensor)
 
 
 class Solver():
-    def __init__(self, model, linear_cca, outdim_size, epoch_num, batch_size, learning_rate, reg_par, device=torch.device('cpu')):
+    def __init__(self, model, linear_cca, linear_outdim_size, epoch_num, batch_size, learning_rate, reg_par, device=torch.device('cpu')):
         self.model = nn.DataParallel(model)
         self.model.to(device)
         self.epoch_num = epoch_num
@@ -31,7 +31,7 @@ class Solver():
 
         self.linear_cca = linear_cca
 
-        self.outdim_size = outdim_size
+        self.linear_outdim_size = linear_outdim_size
 
         formatter = logging.Formatter(
             "[ %(levelname)s : %(asctime)s ] - %(message)s")
@@ -78,10 +78,15 @@ class Solver():
                 batch_x1 = x1[batch_idx, :]
                 batch_x2 = x2[batch_idx, :]
                 # print(f"Batch Data Number: {len(batch_x1)} {len(batch_x2)}")
-                o1, o2 = self.model(batch_x1, batch_x2)
-                loss = self.loss(o1, o2)
+                o1, o2, M = self.model(batch_x1, batch_x2)
+                # print(o1)
+                # print(o2)
+                loss = self.loss(o1, o2, M)
+                print(loss)
                 train_losses.append(loss.item())
                 loss.backward()
+
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1)
                 self.optimizer.step()
             train_loss = np.mean(train_losses)
 
@@ -89,7 +94,7 @@ class Solver():
             if vx1 is not None and vx2 is not None:
                 with torch.no_grad():
                     self.model.eval()
-                    val_loss = self.test(vx1, vx2)
+                    val_loss, outputs = self.test(vx1, vx2)
                     info_string += " - val_loss: {:.4f}".format(val_loss)
                     if val_loss < best_val_loss:
                         self.logger.info(
@@ -104,6 +109,7 @@ class Solver():
             epoch_time = time.time() - epoch_start_time
             self.logger.info(info_string.format(
                 epoch + 1, self.epoch_num, epoch_time, train_loss))
+
         # train_linear_cca
         if self.linear_cca is not None:
             _, outputs = self._get_outputs(x1, x2)
@@ -112,11 +118,11 @@ class Solver():
         checkpoint_ = torch.load(checkpoint)
         self.model.load_state_dict(checkpoint_)
         if vx1 is not None and vx2 is not None:
-            loss = self.test(vx1, vx2)
+            loss, outputs = self.test(vx1, vx2)
             self.logger.info("loss on validation data: {:.4f}".format(loss))
 
         if tx1 is not None and tx2 is not None:
-            loss = self.test(tx1, tx2)
+            loss, outputs = self.test(tx1, tx2)
             self.logger.info('loss on test data: {:.4f}'.format(loss))
 
     def test(self, x1, x2, use_linear_cca=False):
@@ -128,10 +134,10 @@ class Solver():
                 outputs = self.linear_cca.test(outputs[0], outputs[1])
                 return np.mean(losses), outputs
             else:
-                return np.mean(losses)
+                return np.mean(losses), outputs
 
     def train_linear_cca(self, x1, x2):
-        self.linear_cca.fit(x1, x2, self.outdim_size)
+        self.linear_cca.fit(x1, x2, self.linear_outdim_size)
 
     def _get_outputs(self, x1, x2):
         with torch.no_grad():
@@ -142,16 +148,19 @@ class Solver():
             losses = []
             outputs1 = []
             outputs2 = []
+            Mvalues = []
             for batch_idx in batch_idxs:
                 batch_x1 = x1[batch_idx, :]
                 batch_x2 = x2[batch_idx, :]
-                o1, o2 = self.model(batch_x1, batch_x2)
+                o1, o2, M = self.model(batch_x1, batch_x2)
                 outputs1.append(o1)
                 outputs2.append(o2)
-                loss = self.loss(o1, o2)
+                Mvalues.append(M)
+                loss = self.loss(o1, o2, M)
                 losses.append(loss.item())
         outputs = [torch.cat(outputs1, dim=0).cpu().numpy(),
-                   torch.cat(outputs2, dim=0).cpu().numpy()]
+                   torch.cat(outputs2, dim=0).cpu().numpy(),
+                   torch.cat(Mvalues, dim=0).cpu().numpy()]
         return losses, outputs
 
 
@@ -165,21 +174,20 @@ if __name__ == '__main__':
     # the path to save the final learned features
     save_to = './new_features.gz'
 
-    # the size of the new space learned by the model (number of the new features)
-    outdim_size = 10
-
     # size of the input for view 1 and view 2
-    input_shape1 = 784
-    input_shape2 = 784
+    input_shape1 = (28, 28)
+    input_shape2 = (28, 28)
 
-    # number of layers with nodes in each one
-    layer_sizes1 = [1024, 1024, 1024, outdim_size]
-    layer_sizes2 = [1024, 1024, 1024, outdim_size]
+    # output size for the linear cca
+    linear_outdim_size = 10
+
+    # the number of eigen values to check in the correlation
+    k_eigen_check_num = 4
 
     # the parameters for training the network
-    learning_rate = 1e-3
-    epoch_num = 100
-    batch_size = 800
+    learning_rate = 1e-6
+    epoch_num = 30
+    batch_size = 1024
 
     # the regularization parameter of the network
     # seems necessary to avoid the gradient exploding especially when non-saturating activations are used
@@ -191,7 +199,7 @@ if __name__ == '__main__':
 
     # if a linear CCA should get applied on the learned features extracted from the networks
     # it does not affect the performance on noisy MNIST significantly
-    apply_linear_cca = True
+    apply_linear_cca = False
     # end of parameters section
     ############
 
@@ -200,34 +208,49 @@ if __name__ == '__main__':
     # normally under [Home Folder]/.keras/datasets/
     data1 = load_data('./noisymnist_view1.gz', convert_to_image=True)
     data2 = load_data('./noisymnist_view2.gz', convert_to_image=True)
+
     # Building, training, and producing the new features by DCCA
-    model = DeepCCA(layer_sizes1, layer_sizes2, input_shape1,
-                    input_shape2, outdim_size, use_all_singular_values, device=device).double()
+    model = DeepCCA(input_shape1,
+                    input_shape2,
+                    k_eigen_check_num,
+                    use_all_singular_values,
+                    device=device).double()
+
     l_cca = None
     if apply_linear_cca:
         l_cca = linear_cca()
-    solver = Solver(model, l_cca, outdim_size, epoch_num, batch_size,
-                    learning_rate, reg_par, device=device)
+    solver = Solver(model,
+                    l_cca,
+                    linear_outdim_size,
+                    epoch_num,
+                    batch_size,
+                    learning_rate,
+                    reg_par,
+                    device=device)
     train1, train2 = data1[0][0], data2[0][0]
     val1, val2 = data1[1][0], data2[1][0]
     test1, test2 = data1[2][0], data2[2][0]
 
     solver.fit(train1, train2, val1, val2, test1, test2)
-    # TODO: Save l_cca model if needed
 
-    set_size = [0, train1.size(0), train1.size(
-        0) + val1.size(0), train1.size(0) + val1.size(0) + test1.size(0)]
+    set_size = [0,
+                train1.size(0),
+                train1.size(0) + val1.size(0),
+                train1.size(0) + val1.size(0) + test1.size(0)]
     loss, outputs = solver.test(torch.cat([train1, val1, test1], dim=0), torch.cat(
         [train2, val2, test2], dim=0), apply_linear_cca)
     new_data = []
-    # print(outputs)
+
     for idx in range(3):
         new_data.append([outputs[0][set_size[idx]:set_size[idx + 1], :],
-                         outputs[1][set_size[idx]:set_size[idx + 1], :], data1[idx][1]])
+                         outputs[1][set_size[idx]:set_size[idx + 1], :],
+                         data1[idx][1]])
+
     # Training and testing of SVM with linear kernel on the view 1 with new features
     [test_acc, valid_acc] = svm_classify(new_data, C=0.01)
     print("Accuracy on view 1 (validation data) is:", valid_acc * 100.0)
     print("Accuracy on view 1 (test data) is:", test_acc*100.0)
+
     # Saving new features in a gzip pickled file specified by save_to
     print('saving new features ...')
     f1 = gzip.open(save_to, 'wb')

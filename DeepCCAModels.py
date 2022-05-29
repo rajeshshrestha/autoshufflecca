@@ -1,51 +1,80 @@
+from turtle import forward
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 from objectives import cca_loss
 
 
-class MlpNet(nn.Module):
-    def __init__(self, layer_sizes, input_size):
-        super(MlpNet, self).__init__()
+class CNet(nn.Module):
+    def __init__(self, input_size):
+        super(CNet, self).__init__()
+        self.input_size = input_size
         layers = []
-        layer_sizes = [input_size] + layer_sizes
 
         layers.append(nn.Sequential(
-            nn.Conv2d(in_channels=1, out_channels=32, kernel_size=(3,3)),
-            nn.ReLU(),
-            nn.MaxPool2d(3),
-            nn.Flatten(),
-            nn.Linear(in_features= 2048, out_features=input_size)
+            nn.Conv2d(in_channels=1, out_channels=32, kernel_size=(3,3),stride=1, bias=True),
+            nn.MaxPool2d(3, stride=1),
+            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3,3),stride=1, bias=True),
+            nn.MaxPool2d(3, stride=1),
+            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3,3),stride=1, bias=True),
+            nn.MaxPool2d(3, stride=1),
+            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3,3),stride=1, bias=True),
+            nn.MaxPool2d(3, stride=1),
+            nn.Conv2d(in_channels=32, out_channels=1, stride=1, kernel_size=(3,3),bias=True),
+            nn.MaxPool2d(3, stride=1),
+            nn.Flatten()
+            # nn.Linear(in_features= 2048, out_features=10)
         ))
-        for l_id in range(len(layer_sizes) - 1):
-            if l_id == len(layer_sizes) - 2:
-                layers.append(nn.Sequential(
-                    nn.BatchNorm1d(num_features=layer_sizes[l_id], affine=False),
-                    nn.Linear(layer_sizes[l_id], layer_sizes[l_id + 1]),
-                ))
-            else:
-                layers.append(nn.Sequential(
-                    nn.Linear(layer_sizes[l_id], layer_sizes[l_id + 1]),
-                    nn.Sigmoid(),
-                    nn.BatchNorm1d(num_features=layer_sizes[l_id + 1], affine=False),
-                ))
+
         self.layers = nn.ModuleList(layers)
 
     def forward(self, x):
-        # print(f"Input Shape: {x.shape}")
         for layer in self.layers:
             x = layer(x)
-            # print(x.shape)
         return x
 
 
-class DeepCCA(nn.Module):
-    def __init__(self, layer_sizes1, layer_sizes2, input_size1, input_size2, outdim_size, use_all_singular_values, device=torch.device('cpu')):
-        super(DeepCCA, self).__init__()
-        self.model1 = MlpNet(layer_sizes1, input_size1).double()
-        self.model2 = MlpNet(layer_sizes2, input_size2).double()
+class PermNet(nn.Module):
+    def __init__(self):
+        super(PermNet, self).__init__()
+        self.conv_layer = nn.Sequential(
+            nn.Conv2d(in_channels=1, out_channels=3, kernel_size=(3,3)),
+            nn.ReLU(),
+            nn.MaxPool2d(3),
+            nn.Flatten(),
+         )
+        self.final_layer = nn.Sequential(
+            nn.Linear(in_features= 384, out_features=128),
+            nn.ReLU(),
+            nn.Linear(in_features= 128, out_features=64),
+            nn.ReLU()
+        )
+        self.layers = nn.ModuleList([self.conv_layer, self.final_layer])
+    
+    def forward(self, x1, x2):
+        o1 = self.layers[0](x1)
+        o2 = self.layers[0](x2)
+        M = self.layers[1](torch.cat((o1,o2),-1))
+        M = M.reshape(-1,8,8)
+        M = F.normalize(M,p=1, dim=1)
+        M = F.normalize(M, p=1, dim=2)
 
-        self.loss = cca_loss(outdim_size, use_all_singular_values, device).loss
+        return M
+
+class DeepCCA(nn.Module):
+    def __init__(self,
+     input_size1,
+     input_size2,
+     k_eigen_check_num,
+     use_all_singular_values,
+       device=torch.device('cpu')):
+        super(DeepCCA, self).__init__()
+        self.model1 = CNet(input_size1).double()
+        self.model2 = CNet(input_size2).double()
+        self.permutationmodel = PermNet().double()
+
+        self.loss = cca_loss(k_eigen_check_num, use_all_singular_values, device).loss
 
     def forward(self, x1, x2):
         """
@@ -57,5 +86,16 @@ class DeepCCA(nn.Module):
         # feature * batch_size
         output1 = self.model1(x1)
         output2 = self.model2(x2)
+        permutation_out = self.permutationmodel(x1,x2)
+        output1 = torch.matmul(permutation_out, output1.view(-1,8,8))
 
-        return output1, output2
+        # flatten
+        output1 = output1.view(output1.shape[0],-1)
+        
+        # print(permutation_out)
+
+        # print(f"M: {permutation_out}")
+        # for param in self.permutationmodel.parameters():
+        #     print(param)
+        # print("Loop completed")
+        return output1, output2, permutation_out
