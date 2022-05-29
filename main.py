@@ -120,7 +120,7 @@ class Solver():
                 writer.add_image('train_0/second_view_original', input_2[0].view(28,28), epoch+1, dataformats='HW')
                 writer.add_image('train_0/first_view_transformed_feature', output_1[0].view(8,8) ,epoch+1, dataformats='HW')
                 writer.add_image('train_0/second_view_transformed_feature', output_2[0].view(8,8) ,epoch+1, dataformats='HW')
-                writer.add_image('train_0/permutation_matrix', M[0].view(8,8) , epoch+1, dataformats='HW')
+                writer.add_image('train_0/permutation_matrix', M[0].view(64,64) , epoch+1, dataformats='HW')
 
 
             info_string = "Epoch {:d}/{:d} - time: {:.2f} - training_loss: {:.4f} Corr: {:.4f} Mreg: {:.4f}"
