@@ -17,8 +17,8 @@ class CNet(nn.Module):
             nn.MaxPool2d(3, stride=2),
             nn.Conv2d(in_channels=32, out_channels=1, stride=1, kernel_size=(3,3),bias=True),
             nn.MaxPool2d(3, stride=2),
-            nn.Flatten()
-            # nn.Linear(in_features= 2048, out_features=10)
+            nn.Flatten(),
+            # nn.Linear(in_features= 16, out_features=16)
         ))
 
         self.layers = nn.ModuleList(layers)

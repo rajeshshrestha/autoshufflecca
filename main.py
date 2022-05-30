@@ -11,6 +11,10 @@ from datetime import datetime
 import torchvision
 from copy import deepcopy
 import torchvision.transforms as T
+import seaborn as sns
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
+
 try:
     import cPickle as thepickle
 except ImportError:
@@ -20,11 +24,26 @@ import gzip
 import numpy as np
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 torch.set_default_tensor_type(torch.DoubleTensor)
 
 writer = SummaryWriter(log_dir=f"./runs/{datetime.now()}", flush_secs=10)
 
+def fig2img(fig):
+    fig.savefig("./tmp.png")
+    return torchvision.io.read_image("./tmp.png")[:3,:,:]
 
+
+def get_tsne_plot(data,labels):
+    tsne = TSNE(n_components=2, learning_rate='auto', init='random')
+    train_x = tsne.fit_transform(data)
+    fig = plt.figure(figsize=(30,20))
+    sns.scatterplot(hue=labels.tolist(),
+     x=train_x[:,0],
+      y=train_x[:,1],
+       palette=sns.color_palette("hls", len(np.unique(labels))))
+    
+    return fig2img(fig)
 def make_grid(tensor):
     img_num = tensor.shape[0]
     # return torch.cat((torch.cat([t for t in tensor[:img_num//2]], 0),
@@ -61,7 +80,7 @@ class Solver():
         self.epoch_num = epoch_num
         self.batch_size = batch_size
         self.loss = model.loss
-        self.optimizer = torch.optim.Adam(
+        self.optimizer = torch.optim.SGD(
             self.model.parameters(), lr=learning_rate, weight_decay=reg_par)
         self.device = device
 
@@ -72,7 +91,7 @@ class Solver():
         formatter = logging.Formatter(
             "[ %(levelname)s : %(asctime)s ] - %(message)s")
         logging.basicConfig(
-            level=logging.DEBUG, format="[ %(levelname)s : %(asctime)s ] - %(message)s")
+            level=logging.INFO, format="[ %(levelname)s : %(asctime)s ] - %(message)s")
         self.logger = logging.getLogger("Pytorch")
         fh = logging.FileHandler("DCCA.log")
         fh.setFormatter(formatter)
@@ -81,7 +100,7 @@ class Solver():
         self.logger.info(self.model)
         self.logger.info(self.optimizer)
 
-    def fit(self, x1, x2, vx1=None, vx2=None, tx1=None, tx2=None, checkpoint='checkpoint.model'):
+    def fit(self, x1, x2, vx1=None, vx2=None, tx1=None, tx2=None, train_labels=None, checkpoint='checkpoint.model'):
         """
 
         x1, x2 are the vectors needs to be make correlated
@@ -144,6 +163,7 @@ class Solver():
                 'epoch_mreg_loss': Mreg
             }, epoch+1)
 
+            loss,(all_output_1, all_output_2, M) = self.test(x1, x2)
             with torch.no_grad():
                 input_1 = x1[:30, :]
                 input_2 = x2[:30, :]
@@ -157,12 +177,17 @@ class Solver():
                                  make_grid(reconstructed_images.view(-1, 28, 28)), epoch+1, dataformats='HW')
                 writer.add_image('train_0/first_view_transformed_feature',
                                  make_grid(output_1.view(-1, 4, 4)), epoch+1, dataformats='HW')
-                writer.add_image('train_0/first_view_transformed_feature_with_M',
-                                 make_grid(torch.matmul(M, output_1.view(-1,16,1)).view(-1, 4, 4)), epoch+1, dataformats='HW')                 
+                # writer.add_image('train_0/first_view_transformed_feature_with_M',
+                #                  make_grid(torch.matmul(M, output_1.view(-1,16,1)).view(-1, 4, 4)), epoch+1, dataformats='HW')                 
                 writer.add_image('train_0/second_view_transformed_feature',
                                  make_grid(output_2.view(-1, 4, 4)), epoch+1, dataformats='HW')
                 writer.add_image('train_0/permutation_matrix',
                                  make_grid(M.view(-1, 16, 16)), epoch+1, dataformats='HW')
+                if (epoch+1)%10 == 0:
+                    writer.add_image('first_view_feature_tsne',
+                                    get_tsne_plot(all_output_1, train_labels), epoch+1, dataformats='CHW')
+                    writer.add_image('second_view_feature_tsne',
+                                    get_tsne_plot(all_output_2, train_labels), epoch+1, dataformats='CHW')
 
             info_string = "Epoch {:d}/{:d} - time: {:.2f} - training_loss: {:.4f} Corr: {:.4f} Mreg: {:.4f}"
             if vx1 is not None and vx2 is not None:
@@ -261,8 +286,8 @@ if __name__ == '__main__':
     k_eigen_check_num = 16
 
     # the parameters for training the network
-    learning_rate = 1e-4
-    epoch_num = 500
+    learning_rate = 1e-3
+    epoch_num = 30
     batch_size = 256
 
     # the regularization parameter of the network
@@ -317,7 +342,7 @@ if __name__ == '__main__':
     val1, val2 = data1[1][0], data2[1][0]
     test1, test2 = data1[2][0], data2[2][0]
 
-    solver.fit(train1, train2, val1, val2, test1, test2)
+    solver.fit(train1, train2, val1, val2, test1, test2, train_labels=data1[0][1])
 
     set_size = [0,
                 train1.size(0),
