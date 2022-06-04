@@ -4,6 +4,33 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from objectives import cca_loss
+from torchvision import models
+import torch.nn as nn
+
+
+class Identity(nn.Module):
+    def __init__(self):
+        super(Identity, self).__init__()
+        
+    def forward(self, x):
+        return x
+
+def get_resnet_build_comp(model_type='resnet18', channel_num=1):
+    if model_type == 'resnet18':
+        model = models.resnet18(pretrained=False)
+    elif model_type == 'resnet34':
+        model = models.resnet34(pretrained=False)
+    elif model_type == 'resnet50':
+        model = models.resnet50(pretrained=False)
+    elif model_type == 'resnet101':
+        model = models.resnet101(pretrained=False)
+    elif model_type == 'resnet152':
+        model = models.resnet152(pretrained=False)
+    else:
+        raise Exception(f"Unknown model passed: {model_type}")
+    model.conv1 = nn.Conv2d(channel_num, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+    model.fc = Identity()
+    return model
 
 
 class CNet(nn.Module):
@@ -13,14 +40,8 @@ class CNet(nn.Module):
         layers = []
 
         layers.append(nn.Sequential(
-            nn.Conv2d(in_channels=1, out_channels=32, kernel_size=(3,3),stride=1, bias=True),
-            nn.MaxPool2d(3, stride=2),
-            nn.Conv2d(in_channels=32, out_channels=1, stride=1, kernel_size=(3,3),bias=True),
-            nn.MaxPool2d(3, stride=2),
-            nn.Flatten(),
-            # nn.Linear(in_features= 16, out_features=16)
-        ))
-
+            get_resnet_build_comp('resnet18')
+            ))
         self.layers = nn.ModuleList(layers)
 
     def forward(self, x):
@@ -33,22 +54,14 @@ class PermNet(nn.Module):
     def __init__(self):
         super(PermNet, self).__init__()
         self.conv_layer = nn.Sequential(
-            nn.Conv2d(in_channels=1, out_channels=32, kernel_size=(3,3)),
-            nn.ReLU(),
-            nn.MaxPool2d(3),
-            nn.Conv2d(in_channels=32, out_channels=16, kernel_size=(3,3)),
-            nn.ReLU(),
-            nn.MaxPool2d(3),
+            get_resnet_build_comp('resnet18'),
             nn.Flatten(),
          )
         self.final_layer = nn.Sequential(
-            nn.Linear(in_features= 128, out_features=384),
+            nn.Linear(in_features= 1024, out_features=2048),
             nn.ReLU(),
-            nn.Linear(in_features= 384, out_features=16*16),
+            nn.Linear(in_features= 2048, out_features=512*512),
             nn.ReLU(),
-            # nn.Linear(in_features= 128, out_features=16),
-            # nn.ReLU()
-            
         )
         self.layers = nn.ModuleList([self.conv_layer, self.final_layer])
     
@@ -56,7 +69,7 @@ class PermNet(nn.Module):
         o1 = self.layers[0](x1)
         o2 = self.layers[0](x2)
         M = self.layers[1](torch.cat((o1,o2),-1))
-        M = M.view(-1,16,16)
+        M = M.view(-1,512,512)
         for k in range(1):
             M = F.normalize(M+1e-12*torch.rand_like(M),p=1, dim=1)
             M = F.normalize(M+1e-12*torch.rand_like(M), p=1, dim=2)
@@ -87,8 +100,15 @@ class DeepCCA(nn.Module):
         # feature * batch_size
         output1 = self.model1(x1)
         output2 = self.model2(x2)
+
+        print(x1.shape, output1.shape)
+        print(x2.shape, output2.shape)
+
         permutation_out = self.permutationmodel(x1,x2)
-        output1 = torch.matmul(permutation_out, output1.view(-1,16,1)).view(-1,16)
+
+        print(permutation_out.shape)
+        
+        output1 = torch.matmul(permutation_out, output1.view(-1,512,1)).view(-1,512)
 
         # print(permutation_out)
 
