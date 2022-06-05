@@ -29,7 +29,44 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
 torch.set_default_tensor_type(torch.DoubleTensor)
 
-writer = SummaryWriter(log_dir=f"./runs-old-implementation/{datetime.now()}", flush_secs=10)
+writer = SummaryWriter(log_dir=f"./runs-old-implementation/add-gaussian-noise-to-transformed-data1-{datetime.now()}", flush_secs=10)
+
+
+def transform_image(tensor):
+    transform = T.Compose([
+        # T.RandomHorizontalFlip(p=0.5),
+        # T.RandomVerticalFlip(p=0.5),
+        T.RandomRotation((-90,90)),
+        # T.RandomAffine(degrees=90, translate=(0.4, 0.4), scale=(0.3, 1.4)),
+        # AddGaussianNoise(0.,0.3),
+        AddUniformNoise(a=-0.8,b=0.8)
+        ])
+
+    data_num,size = tensor.shape
+    return transform(tensor.view(data_num,int(size**0.5),int(size**0.5))).view(data_num,size)
+
+    
+class AddGaussianNoise(object):
+    def __init__(self, mean=0., std=1.):
+        self.std = std
+        self.mean = mean
+        
+    def __call__(self, tensor):
+        return torch.clip(tensor + torch.randn(tensor.size()) * self.std + self.mean, min=0, max=1)
+    
+    def __repr__(self):
+        return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
+
+class AddUniformNoise(object):
+    def __init__(self, a=0., b=1.):
+        self.a = a
+        self.b = b
+        
+    def __call__(self, tensor):
+        return torch.clip(tensor + torch.rand(tensor.size()) * (self.b-self.a) + self.a, min=0, max=1)
+    
+    def __repr__(self):
+        return self.__class__.__name__ + '(a={0}, b={1})'.format(self.a, self.b)
 
 def fig2img(fig):
     fig.savefig("./tmp.png")
@@ -89,7 +126,7 @@ class Solver():
 
         """
         x1.to(self.device)
-        x2.to(self.device)
+        x2= transform_image(deepcopy(x1)).to(self.device)
 
         data_size = x1.size(0)
 
@@ -105,6 +142,10 @@ class Solver():
         for epoch in range(self.epoch_num):
             epoch_start_time = time.time()
             self.model.train()
+
+            x2 = transform_image(deepcopy(x1))
+            vx2 = transform_image(deepcopy(vx1))
+
             batch_idxs = list(BatchSampler(RandomSampler(
                 range(data_size)), batch_size=self.batch_size, drop_last=False))
             for idx, batch_idx in enumerate(batch_idxs):
@@ -143,11 +184,12 @@ class Solver():
                                  output_1, epoch+1, dataformats='HW')
                 writer.add_image('train_0/second_view_transformed_feature',
                                  output_2, epoch+1, dataformats='HW')
-                if (epoch+1)%10 == 0:
+                if (epoch+1)%10 == -1:
                     writer.add_image('first_view_feature_tsne',
                                     get_tsne_plot(all_output_1, train_labels), epoch+1, dataformats='CHW')
-                    writer.add_image('second_view_feature_tsne',
-                                    get_tsne_plot(all_output_2, train_labels), epoch+1, dataformats='CHW')
+                    # writer.add_image('second_view_feature_tsne',
+                    #                 get_tsne_plot(all_output_2, train_labels), epoch+1, dataformats='CHW')
+                writer.flush()
 
             info_string = "Epoch {:d}/{:d} - time: {:.2f} - training_loss: {:.4f}"
             if vx1 is not None and vx2 is not None:
@@ -159,6 +201,7 @@ class Solver():
                                 'train_loss': train_loss,
                                 'val_loss': val_loss
                             }, epoch+1)
+                    writer.flush()
 
                     info_string += " - val_loss: {:.4f}".format(val_loss)
                     if val_loss < best_val_loss:
@@ -181,6 +224,13 @@ class Solver():
 
         checkpoint_ = torch.load(checkpoint)
         self.model.load_state_dict(checkpoint_)
+
+
+        _, (all_output_1, all_output_2) = self._get_outputs(x1, x2)
+        writer.add_image('first_view_feature_tsne_final',
+                                    get_tsne_plot(all_output_1, train_labels), 10000, dataformats='CHW')
+        writer.flush()
+
         if vx1 is not None and vx2 is not None:
             loss = self.test(vx1, vx2)
             self.logger.info("loss on validation data: {:.4f}".format(loss))
@@ -247,9 +297,9 @@ if __name__ == '__main__':
     layer_sizes2 = [1024, 1024, 1024, outdim_size]
 
     # the parameters for training the network
-    learning_rate = 1e-3
-    epoch_num = 100
-    batch_size = 800
+    learning_rate = 1e-5
+    epoch_num = 10
+    batch_size = 128
 
     # the regularization parameter of the network
     # seems necessary to avoid the gradient exploding especially when non-saturating activations are used
@@ -269,7 +319,12 @@ if __name__ == '__main__':
     # Datasets get stored under the datasets folder of user's Keras folder
     # normally under [Home Folder]/.keras/datasets/
     data1 = load_data('./noisymnist_view1.gz')
-    data2 = load_data('./noisymnist_view2.gz')
+    # data2 = load_data('./noisymnist_view2.gz')
+    data2 = deepcopy(data1)
+
+    for subdata_idx, subdata in enumerate(data2):
+        data2[subdata_idx] = (transform_image(subdata[0]), subdata[1])
+
     # Building, training, and producing the new features by DCCA
     model = DeepCCA(layer_sizes1, layer_sizes2, input_shape1,
                     input_shape2, outdim_size, use_all_singular_values, device=device).double()
