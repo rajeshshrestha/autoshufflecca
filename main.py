@@ -37,9 +37,9 @@ def transform_image(tensor):
         # T.RandomHorizontalFlip(p=0.5),
         # T.RandomVerticalFlip(p=0.5),
         T.RandomRotation((-90,90)),
-        # T.RandomAffine(degrees=90, translate=(0.4, 0.4), scale=(0.3, 1.4)),
+        T.RandomAffine(degrees=90, scale=(0.3, 1.4)),
         # AddGaussianNoise(0.,0.3),
-        AddUniformNoise(a=-0.8,b=0.8)
+        AddUniformNoise(a=-1,b=1)
         ])
 
     data_num,size = tensor.shape
@@ -126,7 +126,8 @@ class Solver():
 
         """
         x1.to(self.device)
-        x2= transform_image(deepcopy(x1)).to(self.device)
+        x2.to(self.device)
+        # x2= transform_image(deepcopy(x1)).to(self.device)
 
         data_size = x1.size(0)
 
@@ -143,8 +144,8 @@ class Solver():
             epoch_start_time = time.time()
             self.model.train()
 
-            x2 = transform_image(deepcopy(x1))
-            vx2 = transform_image(deepcopy(vx1))
+            # x2 = transform_image(deepcopy(x1))
+            # vx2 = transform_image(deepcopy(vx1))
 
             batch_idxs = list(BatchSampler(RandomSampler(
                 range(data_size)), batch_size=self.batch_size, drop_last=False))
@@ -327,11 +328,11 @@ if __name__ == '__main__':
     # Datasets get stored under the datasets folder of user's Keras folder
     # normally under [Home Folder]/.keras/datasets/
     data1 = load_data('./noisymnist_view1.gz')
-    # data2 = load_data('./noisymnist_view2.gz')
-    data2 = deepcopy(data1)
+    data2 = load_data('./noisymnist_view2.gz')
+    # data2 = deepcopy(data1)
 
-    for subdata_idx, subdata in enumerate(data2):
-        data2[subdata_idx] = (transform_image(subdata[0]), subdata[1])
+    # for subdata_idx, subdata in enumerate(data2):
+    #     data2[subdata_idx] = (transform_image(subdata[0]), subdata[1])
 
     # Building, training, and producing the new features by DCCA
     model = DeepCCA(layer_sizes1, layer_sizes2, layer_sizes3, input_shape1,
