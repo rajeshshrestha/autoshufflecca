@@ -312,7 +312,7 @@ if __name__ == '__main__':
     reg_par = 1e-5
 
 
-    lambda_M=1e-0
+    lambda_M=3
 
     # specifies if all the singular values should get used to calculate the correlation or just the top outdim_size ones
     # if one option does not work for a network or dataset, try the other one

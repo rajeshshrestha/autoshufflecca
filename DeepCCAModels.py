@@ -38,7 +38,7 @@ class PermNet(nn.Module):
         self.model = MlpNet(layer_sizes, self.input_size)
     
     def forward(self, x1, x2):
-        M = self.model(torch.cat((x1,x2),-1))
+        M = torch.relu(self.model(torch.cat((x1,x2),-1)))
         M = M.view(-1, self.ouput_size, self.ouput_size)
         for k in range(1):
             M = F.normalize(M+1e-12*torch.rand_like(M),p=1, dim=1)
