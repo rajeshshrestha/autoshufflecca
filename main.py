@@ -7,6 +7,15 @@ from DeepCCAModels import DeepCCA
 from utils import load_data, svm_classify
 import time
 import logging
+
+from datetime import datetime
+import torchvision
+from copy import deepcopy
+import torchvision.transforms as T
+import seaborn as sns
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
+
 try:
     import cPickle as thepickle
 except ImportError:
@@ -15,7 +24,34 @@ except ImportError:
 import gzip
 import numpy as np
 import torch.nn as nn
+from torch.utils.tensorboard import SummaryWriter
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+
 torch.set_default_tensor_type(torch.DoubleTensor)
+
+writer = SummaryWriter(log_dir=f"./runs-old-implementation/{datetime.now()}", flush_secs=10)
+
+def fig2img(fig):
+    fig.savefig("./tmp.png")
+    return torchvision.io.read_image("./tmp.png")[:3,:,:]
+
+
+def get_tsne_plot(data,labels):
+    tsne = TSNE(n_components=2, learning_rate='auto', init='random')
+    train_x = tsne.fit_transform(data)
+    fig = plt.figure(figsize=(30,20))
+    sns.scatterplot(hue=labels.tolist(),
+     x=train_x[:,0],
+      y=train_x[:,1],
+       palette=sns.color_palette("hls", len(np.unique(labels))))
+    
+    return fig2img(fig)
+def make_grid(tensor):
+    img_num = tensor.shape[0]
+    # return torch.cat((torch.cat([t for t in tensor[:img_num//2]], 0),
+    #  torch.cat([t for t in tensor[img_num//2:]], 0)), 1)
+    return torch.cat([t for t in tensor[:img_num]], 0)
+
 
 
 class Solver():
@@ -36,7 +72,7 @@ class Solver():
         formatter = logging.Formatter(
             "[ %(levelname)s : %(asctime)s ] - %(message)s")
         logging.basicConfig(
-            level=logging.DEBUG, format="[ %(levelname)s : %(asctime)s ] - %(message)s")
+            level=logging.INFO, format="[ %(levelname)s : %(asctime)s ] - %(message)s")
         self.logger = logging.getLogger("Pytorch")
         fh = logging.FileHandler("DCCA.log")
         fh.setFormatter(formatter)
@@ -45,7 +81,7 @@ class Solver():
         self.logger.info(self.model)
         self.logger.info(self.optimizer)
 
-    def fit(self, x1, x2, vx1=None, vx2=None, tx1=None, tx2=None, checkpoint='checkpoint.model'):
+    def fit(self, x1, x2, vx1=None, vx2=None, tx1=None, tx2=None, train_labels=None, checkpoint='checkpoint.model'):
         """
 
         x1, x2 are the vectors needs to be make correlated
@@ -71,7 +107,7 @@ class Solver():
             self.model.train()
             batch_idxs = list(BatchSampler(RandomSampler(
                 range(data_size)), batch_size=self.batch_size, drop_last=False))
-            for batch_idx in batch_idxs:
+            for idx, batch_idx in enumerate(batch_idxs):
                 self.optimizer.zero_grad()
                 batch_x1 = x1[batch_idx, :]
                 batch_x2 = x2[batch_idx, :]
@@ -80,13 +116,50 @@ class Solver():
                 train_losses.append(loss.item())
                 loss.backward()
                 self.optimizer.step()
+
+                # Log to tensorboard
+                writer.add_scalars('TrainBatchStats',
+                                   {
+                                       'batch_total_loss': loss.item()
+                                   },
+                                   epoch*len(batch_idxs)+idx+1
+                                   )
+
             train_loss = np.mean(train_losses)
+
+
+
+            _, (all_output_1, all_output_2) = self._get_outputs(x1, x2)
+            with torch.no_grad():
+                input_1 = x1[:30, :]
+                input_2 = x2[:30, :]
+                output_1 = all_output_1[:30,:]
+                output_2 = all_output_2[:30,:]
+                writer.add_image('train_0/first_view_original',
+                                 make_grid(input_1.view(-1, 28, 28)), epoch+1, dataformats='HW')
+                writer.add_image('train_0/second_view_original',
+                                 make_grid(input_2.view(-1, 28, 28)), epoch+1, dataformats='HW')
+                writer.add_image('train_0/first_view_transformed_feature',
+                                 output_1, epoch+1, dataformats='HW')
+                writer.add_image('train_0/second_view_transformed_feature',
+                                 output_2, epoch+1, dataformats='HW')
+                if (epoch+1)%10 == 0:
+                    writer.add_image('first_view_feature_tsne',
+                                    get_tsne_plot(all_output_1, train_labels), epoch+1, dataformats='CHW')
+                    writer.add_image('second_view_feature_tsne',
+                                    get_tsne_plot(all_output_2, train_labels), epoch+1, dataformats='CHW')
 
             info_string = "Epoch {:d}/{:d} - time: {:.2f} - training_loss: {:.4f}"
             if vx1 is not None and vx2 is not None:
                 with torch.no_grad():
                     self.model.eval()
                     val_loss = self.test(vx1, vx2)
+
+                    writer.add_scalars('TrainEpochStats', {
+                                'train_loss': train_loss,
+                                'val_loss': val_loss
+                            }, epoch+1)
+
                     info_string += " - val_loss: {:.4f}".format(val_loss)
                     if val_loss < best_val_loss:
                         self.logger.info(
@@ -175,7 +248,7 @@ if __name__ == '__main__':
 
     # the parameters for training the network
     learning_rate = 1e-3
-    epoch_num = 1
+    epoch_num = 100
     batch_size = 800
 
     # the regularization parameter of the network
@@ -200,6 +273,10 @@ if __name__ == '__main__':
     # Building, training, and producing the new features by DCCA
     model = DeepCCA(layer_sizes1, layer_sizes2, input_shape1,
                     input_shape2, outdim_size, use_all_singular_values, device=device).double()
+    
+    writer.add_graph(model, (data1[0][0][:3], data2[0][0][:3]))
+    writer.flush()
+    
     l_cca = None
     if apply_linear_cca:
         l_cca = linear_cca()
@@ -209,7 +286,7 @@ if __name__ == '__main__':
     val1, val2 = data1[1][0], data2[1][0]
     test1, test2 = data1[2][0], data2[2][0]
 
-    solver.fit(train1, train2, val1, val2, test1, test2)
+    solver.fit(train1, train2, val1, val2, test1, test2, train_labels=data1[0][1])
     # TODO: Save l_cca model if needed
 
     set_size = [0, train1.size(0), train1.size(
