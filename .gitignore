@@ -5,3 +5,6 @@ __pycache__/
 *.model
 *.gz
 .vscode/
+.venv/
+runs**/
+*.png
