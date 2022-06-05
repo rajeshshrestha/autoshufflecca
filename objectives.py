@@ -2,13 +2,14 @@ import torch
 
 
 class cca_loss():
-    def __init__(self, outdim_size, use_all_singular_values, device):
+    def __init__(self, outdim_size, use_all_singular_values, device, lambda_M):
         self.outdim_size = outdim_size
         self.use_all_singular_values = use_all_singular_values
         self.device = device
+        self.lambda_M = lambda_M
         # print(device)
 
-    def loss(self, H1, H2):
+    def loss(self, H1, H2, M):
         """
 
         It is the loss function of CCA as introduced in the original paper. There can be other formulations.
@@ -82,4 +83,8 @@ class cca_loss():
             U = torch.where(U>eps, U, (torch.ones(U.shape).double()*eps).to(self.device))
             U = U.topk(self.outdim_size)[0]
             corr = torch.sum(torch.sqrt(U))
-        return -corr
+        
+        M_reg = 1/m*( torch.sum(torch.sum(torch.sum(torch.abs(M), dim=2) - (torch.sum(M**2, dim=2))**0.5,dim=1)) +\
+            torch.sum(torch.sum(torch.sum(torch.abs(M), dim=1) - (torch.sum(M**2, dim=1))**0.5,dim=1)))
+
+        return -corr + self.lambda_M * M_reg, corr, M_reg

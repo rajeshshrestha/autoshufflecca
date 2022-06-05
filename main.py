@@ -152,8 +152,8 @@ class Solver():
                 self.optimizer.zero_grad()
                 batch_x1 = x1[batch_idx, :]
                 batch_x2 = x2[batch_idx, :]
-                o1, o2 = self.model(batch_x1, batch_x2)
-                loss = self.loss(o1, o2)
+                o1, o2, M = self.model(batch_x1, batch_x2)
+                loss, corr, M_reg = self.loss(o1, o2, M)
                 train_losses.append(loss.item())
                 loss.backward()
                 self.optimizer.step()
@@ -161,7 +161,9 @@ class Solver():
                 # Log to tensorboard
                 writer.add_scalars('TrainBatchStats',
                                    {
-                                       'batch_total_loss': loss.item()
+                                       'batch_total_loss': loss.item(),
+                                       'batch_cor': corr.item(),
+                                       'batch_mreg_loss': M_reg.item()
                                    },
                                    epoch*len(batch_idxs)+idx+1
                                    )
@@ -184,6 +186,8 @@ class Solver():
                                  output_1, epoch+1, dataformats='HW')
                 writer.add_image('train_0/second_view_transformed_feature',
                                  output_2, epoch+1, dataformats='HW')
+                writer.add_image('train_0/permutation_matrix',
+                                 make_grid(M), epoch+1, dataformats='HW')
                 if (epoch+1)%10 == -1:
                     writer.add_image('first_view_feature_tsne',
                                     get_tsne_plot(all_output_1, train_labels), epoch+1, dataformats='CHW')
@@ -265,10 +269,10 @@ class Solver():
             for batch_idx in batch_idxs:
                 batch_x1 = x1[batch_idx, :]
                 batch_x2 = x2[batch_idx, :]
-                o1, o2 = self.model(batch_x1, batch_x2)
+                o1, o2, M = self.model(batch_x1, batch_x2)
                 outputs1.append(o1)
                 outputs2.append(o2)
-                loss = self.loss(o1, o2)
+                loss, corr, M_reg = self.loss(o1, o2, M)
                 losses.append(loss.item())
         outputs = [torch.cat(outputs1, dim=0).cpu().numpy(),
                    torch.cat(outputs2, dim=0).cpu().numpy()]
@@ -295,15 +299,19 @@ if __name__ == '__main__':
     # number of layers with nodes in each one
     layer_sizes1 = [1024, 1024, 1024, outdim_size]
     layer_sizes2 = [1024, 1024, 1024, outdim_size]
+    layer_sizes3 = [1024, 1024, 1024, outdim_size*outdim_size]
 
     # the parameters for training the network
-    learning_rate = 1e-5
-    epoch_num = 10
+    learning_rate = 1e-3
+    epoch_num = 30
     batch_size = 128
 
     # the regularization parameter of the network
     # seems necessary to avoid the gradient exploding especially when non-saturating activations are used
     reg_par = 1e-5
+
+
+    lambda_M=1e-0
 
     # specifies if all the singular values should get used to calculate the correlation or just the top outdim_size ones
     # if one option does not work for a network or dataset, try the other one
@@ -326,8 +334,8 @@ if __name__ == '__main__':
         data2[subdata_idx] = (transform_image(subdata[0]), subdata[1])
 
     # Building, training, and producing the new features by DCCA
-    model = DeepCCA(layer_sizes1, layer_sizes2, input_shape1,
-                    input_shape2, outdim_size, use_all_singular_values, device=device).double()
+    model = DeepCCA(layer_sizes1, layer_sizes2, layer_sizes3, input_shape1,
+                    input_shape2, outdim_size, use_all_singular_values, lambda_M=lambda_M, device=device).double()
     
     writer.add_graph(model, (data1[0][0][:3], data2[0][0][:3]))
     writer.flush()
