@@ -56,6 +56,7 @@ class DeepCCA(nn.Module):
         self.avoid_shuffle = avoid_shuffle
         self.model1 = MlpNet(layer_sizes1, input_size1).double()
         self.model2 = MlpNet(layer_sizes2, input_size2).double()
+        self.normalizing_layer =  nn.BatchNorm1d(num_features=self.outdim_size, affine=False)
 
         if not self.avoid_shuffle:
             self.permModel = PermNet(layer_sizes3, input_size1, input_size2, outdim_size)
@@ -76,6 +77,7 @@ class DeepCCA(nn.Module):
         if not self.avoid_shuffle:
             M = self.permModel(x1, x2)
             output2 = torch.matmul(M, output2.view(-1, self.outdim_size, 1)).view(-1, self.outdim_size)
+            output2 = self.normalizing_layer(output2)
 
             return output1, output2,M
         else:
