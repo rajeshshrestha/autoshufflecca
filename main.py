@@ -271,6 +271,33 @@ class Solver():
         #                             get_tsne_plot(all_output_1, train_labels), 10000, dataformats='CHW')
         # writer.flush()
 
+
+        if x1 is not None and x2 is not None:
+            if not args.no_shuffle:
+                loss = self.test(x1, x2, get_corr_only=True)
+                self.logger.info("Correlation Loss on train data: {:.4f}".format(loss))
+            else:
+                loss = self.test(x1, x2, get_corr_only=False)
+                self.logger.info("Total Loss on train data: {:.4f}".format(loss))
+
+        if vx1 is not None and vx2 is not None:
+            if not args.no_shuffle:
+                loss = self.test(vx1, vx2, get_corr_only=True)
+                self.logger.info("Correlation Loss on validation data: {:.4f}".format(loss))
+            else:
+                loss = self.test(vx1, vx2, get_corr_only=False)
+                self.logger.info("Total Loss on validation data: {:.4f}".format(loss))
+        
+
+        if tx1 is not None and tx2 is not None:
+            if not args.no_shuffle:
+                loss = self.test(tx1, tx2, get_corr_only=True)
+                self.logger.info("Correlation Loss on test data: {:.4f}".format(loss))
+            else:
+                loss = self.test(tx1, tx2, get_corr_only=False)
+                self.logger.info("Total Loss on test data: {:.4f}".format(loss))
+
+
         if vx1 is not None and vx2 is not None:
             loss = self.test(vx1, vx2)
             self.logger.info("loss on validation data: {:.4f}".format(loss))
@@ -279,9 +306,9 @@ class Solver():
             loss = self.test(tx1, tx2)
             self.logger.info('loss on test data: {:.4f}'.format(loss))
 
-    def test(self, x1, x2, use_linear_cca=False):
+    def test(self, x1, x2, use_linear_cca=False, get_corr_only=False):
         with torch.no_grad():
-            losses, outputs = self._get_outputs(x1, x2)
+            losses, outputs = self._get_outputs(x1, x2, get_corr_only=get_corr_only)
 
             if use_linear_cca:
                 print("Linear CCA started!")
@@ -293,7 +320,7 @@ class Solver():
     def train_linear_cca(self, x1, x2):
         self.linear_cca.fit(x1, x2, self.outdim_size)
 
-    def _get_outputs(self, x1, x2):
+    def _get_outputs(self, x1, x2, get_corr_only=False):
         with torch.no_grad():
             self.model.eval()
             data_size = x1.size(0)
@@ -309,6 +336,8 @@ class Solver():
                 if not args.no_shuffle:
                     o1, o2, M = self.model(batch_x1, batch_x2)
                     loss, corr, M_reg = self.loss(o1, o2, M)
+                    if get_corr_only:
+                        loss = -corr
                 else:
                     o1, o2 = self.model(batch_x1, batch_x2)
                     loss, corr, M_reg = self.loss(o1, o2)
@@ -346,7 +375,7 @@ if __name__ == '__main__':
 
     # the parameters for training the network
     learning_rate = 1e-3
-    epoch_num = 30
+    epoch_num = 50
     batch_size = 128
 
     # the regularization parameter of the network
