@@ -108,7 +108,9 @@ class AddGaussianNoise(object):
         self.mean = mean
         
     def __call__(self, tensor):
-        return tensor + torch.randn(tensor.size()) * self.std + self.mean
+        img_num,channel_num,width,height = tensor.size()
+        noise =  torch.randn([img_num, width, height]) * self.std + self.mean
+        return torch.clip(tensor + torch.stack([noise for i in range(channel_num)], axis=1),min=0, max=255)
     
     def __repr__(self):
         return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
@@ -119,7 +121,9 @@ class AddUniformNoise(object):
         self.b = b
         
     def __call__(self, tensor):
-        return tensor + torch.rand(tensor.size()) * (self.b-self.a) + self.a
+        img_num,channel_num,width,height = tensor.size()
+        noise = torch.rand(img_num, width, height) * (self.b-self.a) + self.a
+        return tensor + torch.stack([noise for i in range(channel_num)], axis=1)
     
     def __repr__(self):
         return self.__class__.__name__ + '(a={0}, b={1})'.format(self.a, self.b)
@@ -138,7 +142,7 @@ def transform_image(tensor, channel_num):
         # T.RandomVerticalFlip(p=0.5),
         # T.RandomRotation((-90,90)),
         T.RandomAffine(degrees=0, scale=(0.95, 1.4)),
-        AddGaussianNoise(10,50),
+        AddGaussianNoise(0,5),
         # AddUniformNoise(a=-1,b=1),
         T.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
         ])
@@ -150,6 +154,5 @@ def transform_image(tensor, channel_num):
 def get_normalized_agumented_data(data, channel_num=1):
     data2 = deepcopy(data)
     for subdata_idx, subdata in enumerate(data2):
-        print(transform_image(subdata[0], channel_num))
         data2[subdata_idx] = (transform_image(subdata[0], channel_num), subdata[1])
     return data2

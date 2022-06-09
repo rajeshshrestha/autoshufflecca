@@ -343,7 +343,7 @@ if __name__ == '__main__':
     save_to = './new_features.gz'
 
     # the size of the new space learned by the model (number of the new features)
-    outdim_size = 10
+    outdim_size = 5
 
     if args.use_cifar:
         # size of the input for view 1 and view 2
@@ -360,9 +360,9 @@ if __name__ == '__main__':
     layer_sizes3 = [1024, 1024, 1024, outdim_size*outdim_size]
 
     # the parameters for training the network
-    learning_rate = 1e-4
-    epoch_num = 30
-    batch_size = 256
+    learning_rate = 7e-6
+    epoch_num = 100
+    batch_size = 1024
 
     # the regularization parameter of the network
     # seems necessary to avoid the gradient exploding especially when non-saturating activations are used
