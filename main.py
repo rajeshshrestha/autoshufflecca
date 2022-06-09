@@ -431,9 +431,11 @@ if __name__ == '__main__':
         [train2, val2, test2], dim=0), apply_linear_cca)
     new_data = []
     # print(outputs)
-    for idx in range(3):
+    for dtype, idx in zip(['train', 'validation', 'test'], range(3)):
         new_data.append([outputs[0][set_size[idx]:set_size[idx + 1], :],
                          outputs[1][set_size[idx]:set_size[idx + 1], :], data1[idx][1]])
+        corr = sum([np.corrcoef(new_data[-1][0].T[i], new_data[-1][1].T[i])[0,1] for i in range(outputs[0].shape[-1])])
+        print(f"Data computed correlation for {dtype}: {corr}")
     # Training and testing of SVM with linear kernel on the view 1 with new features
 
 
