@@ -44,6 +44,7 @@ class cca_loss():
         # assert torch.isnan(SigmaHat12).sum().item() == 0
         # assert torch.isnan(SigmaHat22).sum().item() == 0
 
+
         # Calculating the root inverse of covariance matrices by using eigen decomposition
         [D1, V1] = torch.symeig(SigmaHat11, eigenvectors=True)
         [D2, V2] = torch.symeig(SigmaHat22, eigenvectors=True)

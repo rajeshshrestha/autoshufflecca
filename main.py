@@ -5,7 +5,7 @@ import numpy as np
 from linear_cca import linear_cca
 from torch.utils.data import BatchSampler, SequentialSampler, RandomSampler
 from DeepCCAModels import DeepCCA
-from utils import load_data, svm_classify
+from utils import load_mnist_data, load_cifar_data, svm_classify, get_normalized_agumented_data, normalize_cifar
 import time
 import logging
 
@@ -33,6 +33,8 @@ torch.set_default_tensor_type(torch.DoubleTensor)
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--no-shuffle', action='store_true', default=False)
+    parser.add_argument('--use-cifar', action='store_true', default=False)
+
     args = parser.parse_args()
     print(args)
     # exit()
@@ -40,48 +42,17 @@ def parse_args():
 
 args = parse_args()
 
-if args.no_shuffle:
-    writer = SummaryWriter(log_dir=f"./runs/linear/mnist/original/old/{datetime.now()}", flush_secs=10)
+if not args.use_cifar:
+    if args.no_shuffle:
+        writer = SummaryWriter(log_dir=f"./runs/linear/mnist/original/old/{datetime.now()}", flush_secs=10)
+    else:
+        writer = SummaryWriter(log_dir=f"./runs/linear/mnist/original/with-shuffle/{datetime.now()}", flush_secs=10)
 else:
-    writer = SummaryWriter(log_dir=f"./runs/linear/mnist/original/with-shuffle/{datetime.now()}", flush_secs=10)
+    if args.no_shuffle:
+        writer = SummaryWriter(log_dir=f"./runs/linear/cifar/original/old/{datetime.now()}", flush_secs=10)
+    else:
+        writer = SummaryWriter(log_dir=f"./runs/linear/cifar/original/with-shuffle/{datetime.now()}", flush_secs=10)
 
-
-
-def transform_image(tensor):
-    transform = T.Compose([
-        # T.RandomHorizontalFlip(p=0.5),
-        # T.RandomVerticalFlip(p=0.5),
-        T.RandomRotation((-90,90)),
-        T.RandomAffine(degrees=90, scale=(0.3, 1.4)),
-        # AddGaussianNoise(0.,0.3),
-        AddUniformNoise(a=-1,b=1)
-        ])
-
-    data_num,size = tensor.shape
-    return transform(tensor.view(data_num,int(size**0.5),int(size**0.5))).view(data_num,size)
-
-    
-class AddGaussianNoise(object):
-    def __init__(self, mean=0., std=1.):
-        self.std = std
-        self.mean = mean
-        
-    def __call__(self, tensor):
-        return torch.clip(tensor + torch.randn(tensor.size()) * self.std + self.mean, min=0, max=1)
-    
-    def __repr__(self):
-        return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
-
-class AddUniformNoise(object):
-    def __init__(self, a=0., b=1.):
-        self.a = a
-        self.b = b
-        
-    def __call__(self, tensor):
-        return torch.clip(tensor + torch.rand(tensor.size()) * (self.b-self.a) + self.a, min=0, max=1)
-    
-    def __repr__(self):
-        return self.__class__.__name__ + '(a={0}, b={1})'.format(self.a, self.b)
 
 def fig2img(fig):
     fig.savefig("./tmp.png")
@@ -102,7 +73,7 @@ def make_grid(tensor):
     img_num = tensor.shape[0]
     # return torch.cat((torch.cat([t for t in tensor[:img_num//2]], 0),
     #  torch.cat([t for t in tensor[img_num//2:]], 0)), 1)
-    return torch.cat([t for t in tensor[:img_num]], 0)
+    return torch.cat([t for t in tensor[:img_num]], -2)
 
 
 
@@ -175,6 +146,7 @@ class Solver():
 
                 else:
                     o1, o2 = self.model(batch_x1, batch_x2)
+                    # print(o1)
                     loss, corr, M_reg = self.loss(o1, o2)
 
 
@@ -210,11 +182,20 @@ class Solver():
                 input_2 = x2[:30, :]
                 output_1 = all_output_1[:30,:]
                 output_2 = all_output_2[:30,:]
-                writer.add_image('train_0/first_view_original',
-                                 make_grid(input_1.view(-1, 28, 28)), epoch+1, dataformats='HW')
-                writer.add_image('train_0/second_view_original',
-                                 make_grid(input_2.view(-1, 28, 28)), epoch+1, dataformats='HW')
-                writer.add_image('train_0/first_view_transformed_feature',
+
+                if not args.use_cifar:
+                    writer.add_image('train_0/first_view_original',
+                                    make_grid(input_1.view(-1, 28, 28)), epoch+1, dataformats='HW')
+                    writer.add_image('train_0/second_view_original',
+                                    make_grid(input_2.view(-1, 28, 28)), epoch+1, dataformats='HW')
+                    writer.add_image('train_0/first_view_transformed_feature',
+                                 output_1, epoch+1, dataformats='HW')
+                else:
+                    writer.add_image('train_0/first_view_original',
+                                    make_grid(input_1.view(-1, 3, 32, 32)), epoch+1, dataformats='CHW')
+                    writer.add_image('train_0/second_view_original',
+                                    make_grid(input_2.view(-1, 3, 32, 32)), epoch+1, dataformats='CHW')
+                    writer.add_image('train_0/first_view_transformed_feature',
                                  output_1, epoch+1, dataformats='HW')
                 writer.add_image('train_0/second_view_transformed_feature',
                                  output_2, epoch+1, dataformats='HW')
@@ -364,9 +345,14 @@ if __name__ == '__main__':
     # the size of the new space learned by the model (number of the new features)
     outdim_size = 10
 
-    # size of the input for view 1 and view 2
-    input_shape1 = 784
-    input_shape2 = 784
+    if args.use_cifar:
+        # size of the input for view 1 and view 2
+        input_shape1 = 3072
+        input_shape2 = 3072
+    else:
+        input_shape1 = 784
+        input_shape2 = 784
+
 
     # number of layers with nodes in each one
     layer_sizes1 = [1024, 1024, 1024, outdim_size]
@@ -374,9 +360,9 @@ if __name__ == '__main__':
     layer_sizes3 = [1024, 1024, 1024, outdim_size*outdim_size]
 
     # the parameters for training the network
-    learning_rate = 1e-3
+    learning_rate = 1e-4
     epoch_num = 30
-    batch_size = 128
+    batch_size = 256
 
     # the regularization parameter of the network
     # seems necessary to avoid the gradient exploding especially when non-saturating activations are used
@@ -398,12 +384,19 @@ if __name__ == '__main__':
     # Each view is stored in a gzip file separately. They will get downloaded the first time the code gets executed.
     # Datasets get stored under the datasets folder of user's Keras folder
     # normally under [Home Folder]/.keras/datasets/
-    data1 = load_data('./noisymnist_view1.gz')
-    data2 = load_data('./noisymnist_view2.gz')
-    # data2 = deepcopy(data1)
 
-    # for subdata_idx, subdata in enumerate(data2):
-    #     data2[subdata_idx] = (transform_image(subdata[0]), subdata[1])
+
+
+    if not args.use_cifar:
+        data1 = load_mnist_data('./noisymnist_view1.gz')
+        data2 = load_mnist_data('./noisymnist_view2.gz')
+    else:
+        data1 = load_cifar_data('./cifar-10-batches-py')
+        data2 = get_normalized_agumented_data(data1, channel_num=3)
+        data1 = normalize_cifar(data1)
+    
+    print(data1[0][0][:3].shape, data2[0][0][:3].shape)
+
 
     # Building, training, and producing the new features by DCCA
     model = DeepCCA(layer_sizes1, layer_sizes2, layer_sizes3, input_shape1,
