@@ -29,7 +29,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
 torch.set_default_tensor_type(torch.DoubleTensor)
 
-writer = SummaryWriter(log_dir=f"./runs-old-implementation/add-gaussian-noise-to-transformed-data1-{datetime.now()}", flush_secs=10)
+writer = SummaryWriter(log_dir=f"./runs/linear/mnist/original-{datetime.now()}", flush_secs=10)
 
 
 def transform_image(tensor):
