@@ -1,3 +1,4 @@
+from ast import parse
 import torch
 import torch.nn as nn
 import numpy as np
@@ -26,10 +27,24 @@ import numpy as np
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+import argparse
 
 torch.set_default_tensor_type(torch.DoubleTensor)
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--no-shuffle', action='store_true', default=False)
+    args = parser.parse_args()
+    print(args)
+    # exit()
+    return args
 
-writer = SummaryWriter(log_dir=f"./runs/linear/mnist/original-{datetime.now()}", flush_secs=10)
+args = parse_args()
+
+if args.no_shuffle:
+    writer = SummaryWriter(log_dir=f"./runs/linear/mnist/original/old/{datetime.now()}", flush_secs=10)
+else:
+    writer = SummaryWriter(log_dir=f"./runs/linear/mnist/original/with-shuffle/{datetime.now()}", flush_secs=10)
+
 
 
 def transform_image(tensor):
@@ -153,21 +168,37 @@ class Solver():
                 self.optimizer.zero_grad()
                 batch_x1 = x1[batch_idx, :]
                 batch_x2 = x2[batch_idx, :]
-                o1, o2, M = self.model(batch_x1, batch_x2)
-                loss, corr, M_reg = self.loss(o1, o2, M)
+
+                if not args.no_shuffle:
+                    o1, o2, M = self.model(batch_x1, batch_x2)
+                    loss, corr, M_reg = self.loss(o1, o2, M)
+
+                else:
+                    o1, o2 = self.model(batch_x1, batch_x2)
+                    loss, corr, M_reg = self.loss(o1, o2)
+
+
                 train_losses.append(loss.item())
                 loss.backward()
                 self.optimizer.step()
 
                 # Log to tensorboard
-                writer.add_scalars('TrainBatchStats',
-                                   {
-                                       'batch_total_loss': loss.item(),
-                                       'batch_cor': corr.item(),
-                                       'batch_mreg_loss': M_reg.item()
-                                   },
-                                   epoch*len(batch_idxs)+idx+1
-                                   )
+                if not args.no_shuffle:
+                    writer.add_scalars('TrainBatchStats',
+                                    {
+                                        'batch_total_loss': loss.item(),
+                                        'batch_cor': corr.item(),
+                                        'batch_mreg_loss': M_reg.item()
+                                    },
+                                    epoch*len(batch_idxs)+idx+1
+                                    )
+                else:
+                     writer.add_scalars('TrainBatchStats',
+                                    {
+                                        'batch_total_loss': loss.item(),
+                                    },
+                                    epoch*len(batch_idxs)+idx+1
+                                    )
 
             train_loss = np.mean(train_losses)
 
@@ -187,8 +218,9 @@ class Solver():
                                  output_1, epoch+1, dataformats='HW')
                 writer.add_image('train_0/second_view_transformed_feature',
                                  output_2, epoch+1, dataformats='HW')
-                writer.add_image('train_0/permutation_matrix',
-                                 make_grid(M), epoch+1, dataformats='HW')
+                if not args.no_shuffle:
+                    writer.add_image('train_0/permutation_matrix',
+                                    make_grid(M), epoch+1, dataformats='HW')
                 if (epoch+1)%10 == -1:
                     writer.add_image('first_view_feature_tsne',
                                     get_tsne_plot(all_output_1, train_labels), epoch+1, dataformats='CHW')
@@ -222,19 +254,22 @@ class Solver():
             epoch_time = time.time() - epoch_start_time
             self.logger.info(info_string.format(
                 epoch + 1, self.epoch_num, epoch_time, train_loss))
+
+        
+        checkpoint_ = torch.load(checkpoint)
+        self.model.load_state_dict(checkpoint_)
+
+
         # train_linear_cca
         if self.linear_cca is not None:
             _, outputs = self._get_outputs(x1, x2)
             self.train_linear_cca(outputs[0], outputs[1])
 
-        checkpoint_ = torch.load(checkpoint)
-        self.model.load_state_dict(checkpoint_)
 
-
-        _, (all_output_1, all_output_2) = self._get_outputs(x1, x2)
-        writer.add_image('first_view_feature_tsne_final',
-                                    get_tsne_plot(all_output_1, train_labels), 10000, dataformats='CHW')
-        writer.flush()
+        # _, (all_output_1, all_output_2) = self._get_outputs(x1, x2)
+        # writer.add_image('first_view_feature_tsne_final',
+        #                             get_tsne_plot(all_output_1, train_labels), 10000, dataformats='CHW')
+        # writer.flush()
 
         if vx1 is not None and vx2 is not None:
             loss = self.test(vx1, vx2)
@@ -270,10 +305,16 @@ class Solver():
             for batch_idx in batch_idxs:
                 batch_x1 = x1[batch_idx, :]
                 batch_x2 = x2[batch_idx, :]
-                o1, o2, M = self.model(batch_x1, batch_x2)
+                
+                if not args.no_shuffle:
+                    o1, o2, M = self.model(batch_x1, batch_x2)
+                    loss, corr, M_reg = self.loss(o1, o2, M)
+                else:
+                    o1, o2 = self.model(batch_x1, batch_x2)
+                    loss, corr, M_reg = self.loss(o1, o2)
+
                 outputs1.append(o1)
                 outputs2.append(o2)
-                loss, corr, M_reg = self.loss(o1, o2, M)
                 losses.append(loss.item())
         outputs = [torch.cat(outputs1, dim=0).cpu().numpy(),
                    torch.cat(outputs2, dim=0).cpu().numpy()]
@@ -283,6 +324,7 @@ class Solver():
 if __name__ == '__main__':
     ############
     # Parameters Section
+    args = parse_args()
 
     device = torch.device('cuda')
     print("Using", torch.cuda.device_count(), "GPUs")
@@ -336,7 +378,8 @@ if __name__ == '__main__':
 
     # Building, training, and producing the new features by DCCA
     model = DeepCCA(layer_sizes1, layer_sizes2, layer_sizes3, input_shape1,
-                    input_shape2, outdim_size, use_all_singular_values, lambda_M=lambda_M, device=device).double()
+                    input_shape2, outdim_size, use_all_singular_values, lambda_M=lambda_M, avoid_shuffle=args.no_shuffle,
+                     device=device).double()
     
     writer.add_graph(model, (data1[0][0][:3], data2[0][0][:3]))
     writer.flush()
@@ -363,6 +406,32 @@ if __name__ == '__main__':
         new_data.append([outputs[0][set_size[idx]:set_size[idx + 1], :],
                          outputs[1][set_size[idx]:set_size[idx + 1], :], data1[idx][1]])
     # Training and testing of SVM with linear kernel on the view 1 with new features
+
+
+    '''Save tsne plot for train, validation and test'''
+    # Train tsne
+    writer.add_image('tsne/train-first-view',
+                                    get_tsne_plot(new_data[0][0], new_data[0][2]), dataformats='CHW')
+    writer.add_image('tsne/train-second-view',
+                                    get_tsne_plot(new_data[0][1], new_data[0][2]), dataformats='CHW')
+
+    
+    # Validation tsne
+    writer.add_image('tsne/val-first-view',
+                                    get_tsne_plot(new_data[1][0], new_data[1][2]), dataformats='CHW')
+    writer.add_image('tsne/val-second-view',
+                                    get_tsne_plot(new_data[1][1], new_data[1][2]), dataformats='CHW')
+    
+    # Test tsne
+    writer.add_image('tsne/test-first-view',
+                                    get_tsne_plot(new_data[2][0], new_data[2][2]), dataformats='CHW')
+    writer.add_image('tsne/test-second-view',
+                                    get_tsne_plot(new_data[2][1], new_data[2][2]), dataformats='CHW')
+
+
+
+
+
     [test_acc, valid_acc] = svm_classify(new_data, C=0.01)
     print("Accuracy on view 1 (validation data) is:", valid_acc * 100.0)
     print("Accuracy on view 1 (test data) is:", test_acc*100.0)

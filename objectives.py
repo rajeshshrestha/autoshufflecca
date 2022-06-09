@@ -2,14 +2,15 @@ import torch
 
 
 class cca_loss():
-    def __init__(self, outdim_size, use_all_singular_values, device, lambda_M):
+    def __init__(self, outdim_size, use_all_singular_values, device, avoid_shuffle, lambda_M):
         self.outdim_size = outdim_size
         self.use_all_singular_values = use_all_singular_values
         self.device = device
         self.lambda_M = lambda_M
+        self.avoid_shuffle = avoid_shuffle
         # print(device)
 
-    def loss(self, H1, H2, M):
+    def loss(self, H1, H2, M=None):
         """
 
         It is the loss function of CCA as introduced in the original paper. There can be other formulations.
@@ -84,7 +85,10 @@ class cca_loss():
             U = U.topk(self.outdim_size)[0]
             corr = torch.sum(torch.sqrt(U))
         
-        M_reg = 1/m*( torch.sum(torch.sum(torch.sum(torch.abs(M), dim=2) - (torch.sum(M**2, dim=2))**0.5,dim=1)) +\
-            torch.sum(torch.sum(torch.sum(torch.abs(M), dim=1) - (torch.sum(M**2, dim=1))**0.5,dim=1)))
+        if not self.avoid_shuffle:
+            M_reg = 1/m*( torch.sum(torch.sum(torch.sum(torch.abs(M), dim=2) - (torch.sum(M**2, dim=2))**0.5,dim=1)) +\
+                torch.sum(torch.sum(torch.sum(torch.abs(M), dim=1) - (torch.sum(M**2, dim=1))**0.5,dim=1)))
 
-        return -corr + self.lambda_M * M_reg, corr, M_reg
+            return -corr + self.lambda_M * M_reg, corr, M_reg
+        else:
+            return -corr, corr, 0
