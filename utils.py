@@ -156,3 +156,15 @@ def get_normalized_agumented_data(data, channel_num=1):
     for subdata_idx, subdata in enumerate(data2):
         data2[subdata_idx] = (transform_image(subdata[0], channel_num), subdata[1])
     return data2
+
+def split_image(data1, img_width):
+    data2 = deepcopy(data1)
+
+    for subdata_idx, subdata in enumerate(data1):
+        image_size = subdata[0].shape[-1]
+        data1[subdata_idx] = (subdata[0].reshape(-1, 3, img_width, img_width)[:,:,:,:img_width//2].reshape(-1,image_size//2), subdata[1])
+
+    for subdata_idx, subdata in enumerate(data2):
+        image_size = subdata[0].shape[-1]
+        data2[subdata_idx] = (subdata[0].reshape(-1, 3, img_width, img_width)[:,:,:,img_width//2:].reshape(-1,image_size//2), subdata[1])
+    return data1, data2
