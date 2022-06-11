@@ -49,14 +49,14 @@ args = parse_args()
 
 if not args.use_cifar:
     if args.no_shuffle:
-        writer = SummaryWriter(log_dir=f"./final-runs/adjusted_k=5/linear/mnist/original/old/split_image={args.split_image}/{datetime.now()}", flush_secs=10)
+        writer = SummaryWriter(log_dir=f"./runs/adjusted_k=5/linear/mnist/original/old/split_image={args.split_image}/{datetime.now()}", flush_secs=10)
     else:
-        writer = SummaryWriter(log_dir=f"./final-runs/adjusted_k=5/linear/mnist/original/with-shuffle/split_image={args.split_image}/{datetime.now()}", flush_secs=10)
+        writer = SummaryWriter(log_dir=f"./runs/adjusted_k=5/linear/mnist/original/with-shuffle/split_image={args.split_image}/{datetime.now()}", flush_secs=10)
 else:
     if args.no_shuffle:
-        writer = SummaryWriter(log_dir=f"./final-runs/adjusted_k=5/linear/cifar/original/old/split_image={args.split_image}/{datetime.now()}", flush_secs=10)
+        writer = SummaryWriter(log_dir=f"./runs/adjusted_k=5/linear/cifar/original/old/split_image={args.split_image}/{datetime.now()}", flush_secs=10)
     else:
-        writer = SummaryWriter(log_dir=f"./final-runs/adjusted_k=5/linear/cifar/original/with-shuffle/split_image={args.split_image}/{datetime.now()}", flush_secs=10)
+        writer = SummaryWriter(log_dir=f"./runs/adjusted_k=5/linear/cifar/original/with-shuffle/split_image={args.split_image}/{datetime.now()}", flush_secs=10)
 
 
 def fig2img(fig):
