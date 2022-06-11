@@ -9,3 +9,4 @@ __pycache__/
 runs**/
 *.png
 cifar-10-batches-py/
+final-runs/

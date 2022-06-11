@@ -17,6 +17,7 @@ import torchvision.transforms as T
 import seaborn as sns
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
+import random
 
 try:
     import cPickle as thepickle
@@ -31,6 +32,8 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 import argparse
 
 torch.set_default_tensor_type(torch.DoubleTensor)
+
+random_number = random.randint(0,10000000)
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--no-shuffle', action='store_true', default=False)
@@ -46,14 +49,14 @@ args = parse_args()
 
 if not args.use_cifar:
     if args.no_shuffle:
-        writer = SummaryWriter(log_dir=f"./runs/linear/mnist/original/old/split_image={args.split_image}/{datetime.now()}", flush_secs=10)
+        writer = SummaryWriter(log_dir=f"./final-runs/adjusted_k=5/linear/mnist/original/old/split_image={args.split_image}/{datetime.now()}", flush_secs=10)
     else:
-        writer = SummaryWriter(log_dir=f"./runs/linear/mnist/original/with-shuffle/split_image={args.split_image}/{datetime.now()}", flush_secs=10)
+        writer = SummaryWriter(log_dir=f"./final-runs/adjusted_k=5/linear/mnist/original/with-shuffle/split_image={args.split_image}/{datetime.now()}", flush_secs=10)
 else:
     if args.no_shuffle:
-        writer = SummaryWriter(log_dir=f"./runs/linear/cifar/original/old/split_image={args.split_image}/{datetime.now()}", flush_secs=10)
+        writer = SummaryWriter(log_dir=f"./final-runs/adjusted_k=5/linear/cifar/original/old/split_image={args.split_image}/{datetime.now()}", flush_secs=10)
     else:
-        writer = SummaryWriter(log_dir=f"./runs/linear/cifar/original/with-shuffle/split_image={args.split_image}/{datetime.now()}", flush_secs=10)
+        writer = SummaryWriter(log_dir=f"./final-runs/adjusted_k=5/linear/cifar/original/with-shuffle/split_image={args.split_image}/{datetime.now()}", flush_secs=10)
 
 
 def fig2img(fig):
@@ -65,6 +68,7 @@ def get_tsne_plot(data,labels):
     tsne = TSNE(n_components=2, learning_rate='auto', init='random')
     train_x = tsne.fit_transform(data)
     fig = plt.figure(figsize=(30,20))
+    # fig = plt.figure()
     sns.scatterplot(hue=labels.tolist(),
      x=train_x[:,0],
       y=train_x[:,1],
@@ -106,7 +110,7 @@ class Solver():
         self.logger.info(self.model)
         self.logger.info(self.optimizer)
 
-    def fit(self, x1, x2, vx1=None, vx2=None, tx1=None, tx2=None, train_labels=None, checkpoint='checkpoint.model'):
+    def fit(self, x1, x2, vx1=None, vx2=None, tx1=None, tx2=None, train_labels=None, checkpoint=f'checkpoint_{random_number}.model'):
         """
 
         x1, x2 are the vectors needs to be make correlated
@@ -357,7 +361,7 @@ if __name__ == '__main__':
     save_to = './new_features.gz'
 
     # the size of the new space learned by the model (number of the new features)
-    outdim_size = 5
+    outdim_size = 10
 
     if args.use_cifar:
         # size of the input for view 1 and view 2
@@ -382,8 +386,8 @@ if __name__ == '__main__':
     layer_sizes3 = [1024, 1024, 1024, outdim_size*outdim_size]
 
     # the parameters for training the network
-    learning_rate = 7e-6
-    epoch_num = 100
+    learning_rate = 1e-3
+    epoch_num = 30
     batch_size = 128
 
     # the regularization parameter of the network
@@ -412,7 +416,7 @@ if __name__ == '__main__':
     if not args.use_cifar:
         data1 = load_mnist_data('./noisymnist_view1.gz')
         if args.split_image:
-            data1, data2 = split_image(data1, img_width=28)
+            data1, data2 = split_image(data1, img_width=28, channel=1)
         else:
             data2 = load_mnist_data('./noisymnist_view2.gz')
     else:
@@ -495,6 +499,6 @@ if __name__ == '__main__':
     f1 = gzip.open(save_to, 'wb')
     thepickle.dump(new_data, f1)
     f1.close()
-    d = torch.load('checkpoint.model')
+    d = torch.load(f'checkpoint_{random_number}.model')
     solver.model.load_state_dict(d)
     solver.model.parameters()
