@@ -31,12 +31,8 @@ class cca_loss():
         SigmaHat22 = (1.0 / (m - 1)) * torch.matmul(H2bar,
                                                     H2bar.t()) + r2 * torch.eye(o2, device=self.device)
 
-
-        # Calculating the root inverse of covariance matrices by using eigen decomposition
         [D1, V1] = torch.symeig(SigmaHat11, eigenvectors=True)
         [D2, V2] = torch.symeig(SigmaHat22, eigenvectors=True)
-
-        # Added to increase stability
         posInd1 = torch.gt(D1, eps).nonzero()[:, 0]
         D1 = D1[posInd1]
         V1 = V1[:, posInd1]
@@ -54,12 +50,9 @@ class cca_loss():
                                          SigmaHat12), SigmaHat22RootInv)
 
         if self.use_all_singular_values:
-            # all singular values are used to calculate the correlation
             tmp = torch.matmul(Tval.t(), Tval)
             corr = torch.trace(torch.sqrt(tmp))
-            # assert torch.isnan(corr).item() == 0
         else:
-            # just the top self.outdim_size singular values are used
             trace_TT = torch.matmul(Tval.t(), Tval)
             trace_TT = torch.add(trace_TT, (torch.eye(trace_TT.shape[0])*r1).to(self.device)) # regularization for more stability
             U, V = torch.symeig(trace_TT, eigenvectors=True)
